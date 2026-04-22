@@ -1,0 +1,30 @@
+name: Sync Playtimes
+
+on:
+  schedule:
+    - cron: '0 9 * * *'
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm install
+      - run: npx playwright install --with-deps chromium
+      - run: npm run sync:headless
+        env:
+          BACKLOGGD_EMAIL: ${{ secrets.BACKLOGGD_EMAIL }}
+          BACKLOGGD_PWD: ${{ secrets.BACKLOGGD_PWD }}
+          PS_TIMETRACKER_CODE: ${{ secrets.PS_TIMETRACKER_CODE }}
+          PS_TIMETRACKER_PSN_NAME: ${{ secrets.PS_TIMETRACKER_PSN_NAME }}
+          HEADLESS: 'true'
+          BACKLOGGD_STORAGE_STATE_PATH: 'storage/backloggd-state.json'
+          SYNC_REFERENCE_DAYS_OFFSET: -1
+
