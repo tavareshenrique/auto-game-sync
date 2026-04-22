@@ -9,27 +9,50 @@ jobs:
   sync:
     runs-on: ubuntu-latest
     environment: Production
+    
     steps:
       - uses: actions/checkout@v4
 
       - uses: pnpm/action-setup@v4
         with:
-          version: 9 # Você pode especificar a versão que preferir
+          version: 9
 
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: pnpm # O cache agora aponta para o pnpm
+          cache: pnpm
 
-      - run: pnpm install
-      
-      # O playwright ainda pode ser chamado via npx ou pnpm dlx
-      - run: pnpm exec playwright install --with-deps chromium
-      
+      - run: pnpm install --frozen-lockfile
+
+      # Cache dos binários do Playwright baseado no lockfile
+      - name: Get Playwright version
+        id: playwright-version
+        run: echo "version=$(pnpm list playwright --depth 0 | grep playwright | cut -d ' ' -f 2)" >> $GITHUB_OUTPUT
+
+      - name: Cache Playwright Binaries
+        uses: actions/cache@v4
+        id: playwright-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ steps.playwright-version.outputs.version }}
+
+      # Instala apenas o Chromium e as dependências do sistema se o cache falhar
+      - name: Install Playwright Chromium
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: pnpm exec playwright install --with-deps chromium
+
+      # Se o cache bateu, ainda precisamos garantir que as dependências do sistema (libs do linux) estejam lá
+      - name: Install Playwright System Deps
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        run: pnpm exec playwright install-deps chromium
+
       - run: pnpm run sync:headless
         env:
           BACKLOGGD_EMAIL: ${{ secrets.BACKLOGGD_EMAIL }}
           BACKLOGGD_PWD: ${{ secrets.BACKLOGGD_PWD }}
           PS_TIMETRACKER_CODE: ${{ secrets.PS_TIMETRACKER_CODE }}
           PS_TIMETRACKER_PSN_NAME: ${{ secrets.PS_TIMETRACKER_PSN_NAME }}
-          HEADLESS: 'true'
+          HEADLESS: ${{ vars.HEADLESS }}
+          BACKLOGGD_STORAGE_STATE_PATH: ${{ vars.BACKLOGGD_STORAGE_STATE_PATH }}
+          SYNC_DEBUG: ${{ vars.SYNC_DEBUG }}
+          SYNC_REFERENCE_DAYS_OFFSET: ${{ vars.SYNC_REFERENCE_DAYS_OFFSET }}
