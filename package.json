@@ -1,0 +1,22 @@
+{
+  "name": "auto-game-sync",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "sync": "tsx src/sync-playtimes.ts",
+    "sync:headless": "HEADLESS=true tsx src/sync-playtimes.ts",
+    "typecheck": "tsc --noEmit",
+    "postinstall": "playwright install chromium",
+    "playwright:install": "playwright install chromium"
+  },
+  "dependencies": {
+    "dotenv": "^16.6.1",
+    "playwright": "^1.53.2"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.53.2",
+    "@types/node": "^22.15.29",
+    "tsx": "^4.20.3",
+    "typescript": "^5.8.3"
+  }
+}
