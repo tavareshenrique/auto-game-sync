@@ -11,20 +11,24 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9 # Você pode especificar a versão que preferir
+
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
+          cache: pnpm # O cache agora aponta para o pnpm
 
-      - run: npm install
-      - run: npx playwright install --with-deps chromium
-      - run: npm run sync:headless
+      - run: pnpm install
+      
+      # O playwright ainda pode ser chamado via npx ou pnpm dlx
+      - run: pnpm exec playwright install --with-deps chromium
+      
+      - run: pnpm run sync:headless
         env:
           BACKLOGGD_EMAIL: ${{ secrets.BACKLOGGD_EMAIL }}
           BACKLOGGD_PWD: ${{ secrets.BACKLOGGD_PWD }}
           PS_TIMETRACKER_CODE: ${{ secrets.PS_TIMETRACKER_CODE }}
           PS_TIMETRACKER_PSN_NAME: ${{ secrets.PS_TIMETRACKER_PSN_NAME }}
           HEADLESS: 'true'
-          BACKLOGGD_STORAGE_STATE_PATH: 'storage/backloggd-state.json'
-          SYNC_REFERENCE_DAYS_OFFSET: -1
-
