@@ -1,24 +1,12 @@
 import 'dotenv/config';
 import { mkdir, access } from 'node:fs/promises';
 import { chromium, type Page, type BrowserContext, type Locator } from 'playwright';
+import { collapseSpaces, durationToMinutes, getReferenceDate, normalizeText, toDisplayDuration, type GamePlaytime } from './domain.js';
+import { loginIfNeeded, scrapeTodaySessions } from './ps-timetracker.js';
 
-type GamePlaytime = {
-  title: string;
-  hours: number;
-  minutes: number;
-};
-
-type RawSession = {
-  title: string;
-  minutes: number;
-  startedAt?: Date;
-};
-
-const PLAYTIMES_URL = 'https://ps-timetracker.com/profile/HTavares97/playtimes';
 const BACKLOGGD_DEFAULT_ORIGIN = 'https://backloggd.com';
 let BACKLOGGD_ACTIVE_ORIGIN = BACKLOGGD_DEFAULT_ORIGIN;
 const BACKLOGGD_STORAGE_STATE_PATH = process.env.BACKLOGGD_STORAGE_STATE_PATH;
-const PSN_NAME = process.env.PS_TIMETRACKER_PSN_NAME ?? 'HTavares97';
 const HEADLESS = process.env.HEADLESS !== 'false';
 const REFERENCE_DATE = getReferenceDate();
 const DEBUG_SYNC = process.env.SYNC_DEBUG === 'true';
@@ -43,19 +31,6 @@ function requireEnv(name: string): string {
   return value;
 }
 
-function normalizeText(value: string): string {
-  return value
-    .normalize('NFD')
-    .replace(/\p{Diacritic}/gu, '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, ' ')
-    .trim();
-}
-
-function collapseSpaces(value: string): string {
-  return value.replace(/\s+/g, ' ').trim();
-}
-
 function isBackloggdHost(hostname: string): boolean {
   return hostname === 'backloggd.com' || hostname === 'www.backloggd.com' || hostname.endsWith('.backloggd.com');
 }
@@ -75,124 +50,6 @@ function backloggdUrl(path: string): string {
   return new URL(path, `${BACKLOGGD_ACTIVE_ORIGIN}/`).toString();
 }
 
-function getReferenceDate(): Date {
-  const referenceDateValue = process.env.SYNC_REFERENCE_DATE;
-  const referenceOffsetValue = process.env.SYNC_REFERENCE_DAYS_OFFSET;
-
-  if (referenceDateValue) {
-    const parsed = new Date(referenceDateValue);
-    if (Number.isNaN(parsed.getTime())) {
-      throw new Error(`Invalid SYNC_REFERENCE_DATE value: ${referenceDateValue}`);
-    }
-
-    return new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate());
-  }
-
-  if (referenceOffsetValue) {
-    const offsetDays = Number(referenceOffsetValue);
-    if (!Number.isFinite(offsetDays)) {
-      throw new Error(`Invalid SYNC_REFERENCE_DAYS_OFFSET value: ${referenceOffsetValue}`);
-    }
-
-    const now = new Date();
-    const offsetDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    offsetDate.setDate(offsetDate.getDate() + offsetDays);
-    return offsetDate;
-  }
-
-  const now = new Date();
-  return new Date(now.getFullYear(), now.getMonth(), now.getDate());
-}
-
-function durationToMinutes(hours: number, minutes: number): number {
-  return hours * 60 + minutes;
-}
-
-function minutesToDuration(totalMinutes: number): { hours: number; minutes: number } {
-  return {
-    hours: Math.floor(totalMinutes / 60),
-    minutes: totalMinutes % 60
-  };
-}
-
-function parseDuration(text: string): number | null {
-  const normalized = text.replace(/\s+/g, ' ').trim();
-
-  const hhmmMatch = normalized.match(/(\d+)\s*:\s*(\d{1,2})\s*hours?/i);
-  if (hhmmMatch) {
-    const hours = Number(hhmmMatch[1]);
-    const minutes = Number(hhmmMatch[2]);
-
-    if (Number.isFinite(hours) && Number.isFinite(minutes)) {
-      return durationToMinutes(hours, minutes);
-    }
-  }
-
-  const hourMatch = normalized.match(/(\d+)\s*hours?/i);
-  if (hourMatch) {
-    const hours = Number(hourMatch[1]);
-    if (Number.isFinite(hours)) {
-      return durationToMinutes(hours, 0);
-    }
-  }
-
-  const minuteMatch = normalized.match(/(\d+)\s*minutes?/i);
-  if (minuteMatch) {
-    const minutes = Number(minuteMatch[1]);
-    if (Number.isFinite(minutes)) {
-      return minutes;
-    }
-  }
-
-  const compactMatch = normalized.match(/(\d+)\s*h(?:ours?)?\s*(\d+)\s*m(?:in(?:utes?)?)?/i);
-  if (compactMatch) {
-    const hours = Number(compactMatch[1]);
-    const minutes = Number(compactMatch[2]);
-
-    if (Number.isFinite(hours) && Number.isFinite(minutes)) {
-      return durationToMinutes(hours, minutes);
-    }
-  }
-
-  return null;
-}
-
-function parseDateCandidates(text: string): Date | null {
-  const normalized = text.replace(/\s+/g, ' ').trim();
-  const now = REFERENCE_DATE;
-
-  const isoDate = normalized.match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2}))?/);
-  if (isoDate) {
-    const year = Number(isoDate[1]);
-    const month = Number(isoDate[2]) - 1;
-    const day = Number(isoDate[3]);
-    const hours = isoDate[4] ? Number(isoDate[4]) : 0;
-    const minutes = isoDate[5] ? Number(isoDate[5]) : 0;
-    return new Date(year, month, day, hours, minutes);
-  }
-
-  const explicitDate = normalized.match(/(\d{1,2})[\/\-.](\d{1,2})(?:[\/\-.](\d{2,4}))?/);
-  if (explicitDate) {
-    const first = Number(explicitDate[1]);
-    const second = Number(explicitDate[2]);
-    const year = explicitDate[3] ? Number(explicitDate[3].length === 2 ? `20${explicitDate[3]}` : explicitDate[3]) : now.getFullYear();
-    const candidateFirst = new Date(year, second - 1, first);
-    const candidateSecond = new Date(year, first - 1, second);
-    return isNaN(candidateFirst.getTime()) ? candidateSecond : candidateFirst;
-  }
-
-  if (/today|hoje/i.test(normalized)) {
-    return new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  }
-
-  return null;
-}
-
-function toDisplayDuration(totalMinutes: number): string {
-  const { hours, minutes } = minutesToDuration(totalMinutes);
-  return `${hours}h ${minutes}m`;
-}
-
 async function fileExists(path: string): Promise<boolean> {
   try {
     await access(path);
@@ -200,162 +57,6 @@ async function fileExists(path: string): Promise<boolean> {
   } catch {
     return false;
   }
-}
-
-function aggregateSessions(sessions: RawSession[]): GamePlaytime[] {
-  const totals = new Map<string, { title: string; minutes: number }>();
-
-  for (const session of sessions) {
-    const key = normalizeText(session.title);
-    const current = totals.get(key);
-    if (current) {
-      current.minutes += session.minutes;
-      if (session.title.length > current.title.length) {
-        current.title = session.title;
-      }
-      continue;
-    }
-
-    totals.set(key, { title: session.title, minutes: session.minutes });
-  }
-
-  return Array.from(totals.values()).map((item) => {
-    const { hours, minutes } = minutesToDuration(item.minutes);
-    return { title: item.title, hours, minutes };
-  });
-}
-
-async function loginIfNeeded(page: Page): Promise<void> {
-  await page.goto(PLAYTIMES_URL, { waitUntil: 'domcontentloaded' });
-  await page.waitForLoadState('networkidle').catch(() => undefined);
-
-  const sessionsTablePresent =
-    (await page
-      .locator('table')
-      .filter({ has: page.locator('thead th', { hasText: /^Start$/i }) })
-      .filter({ has: page.locator('thead th', { hasText: /^End$/i }) })
-      .count()) > 0;
-  if (sessionsTablePresent) {
-    return;
-  }
-
-  const loginVisible = await page.getByText(/you need to login/i).isVisible().catch(() => false);
-  const loginForm = page
-    .locator('form')
-    .filter({ has: page.getByRole('button', { name: /login/i }) })
-    .first();
-  const visibleInputs = loginForm.locator('input:visible:not([type="hidden"]):not([disabled])');
-  const visibleInputCount = await visibleInputs.count();
-
-  if (!loginVisible && visibleInputCount === 0) {
-    return;
-  }
-
-  const code = process.env.PS_TIMETRACKER_CODE;
-  if (!code) {
-    throw new Error('PS_TIMETRACKER_CODE is required to access the playtimes page.');
-  }
-
-  await loginForm.waitFor({ state: 'visible', timeout: 15_000 }).catch(() => undefined);
-
-  const inputs = visibleInputs;
-  const inputCount = await inputs.count();
-
-  if (inputCount === 0) {
-    throw new Error('Could not find a visible PS-Timetracker login input.');
-  }
-
-  if (inputCount === 1) {
-    await inputs.first().fill(code);
-  } else if (inputCount >= 2) {
-    await inputs.nth(0).fill(PSN_NAME);
-    await inputs.nth(1).fill(code);
-  } else {
-    throw new Error('Could not find a visible PS-Timetracker login input.');
-  }
-
-  await page.getByRole('button', { name: /login/i }).click();
-  await page.waitForLoadState('networkidle').catch(() => undefined);
-
-  // Login may redirect to profile root. Always return to sessions page.
-  await page.goto(PLAYTIMES_URL, { waitUntil: 'domcontentloaded' });
-  await page.waitForLoadState('networkidle').catch(() => undefined);
-
-  const stillBlocked = await page.getByText(/you need to login/i).isVisible().catch(() => false);
-  if (stillBlocked) {
-    throw new Error('PS-Timetracker login did not succeed. Verify PS_TIMETRACKER_CODE and account access.');
-  }
-}
-
-async function scrapeTodaySessions(page: Page): Promise<GamePlaytime[]> {
-  const todayDate = REFERENCE_DATE;
-  const yesterdayCutoff = new Date(REFERENCE_DATE);
-  yesterdayCutoff.setDate(yesterdayCutoff.getDate() - 1);
-  const sessions: RawSession[] = [];
-
-  for (let pageNumber = 1; pageNumber <= 5; pageNumber += 1) {
-    const pageUrl = pageNumber === 1 ? PLAYTIMES_URL : `${PLAYTIMES_URL}?page=${pageNumber}`;
-    await page.goto(pageUrl, { waitUntil: 'domcontentloaded' });
-    await page.waitForLoadState('networkidle').catch(() => undefined);
-
-    // Scope to the detailed sessions table, not the aggregated games table.
-    const sessionsTable = page
-      .locator('table')
-      .filter({ has: page.locator('thead th', { hasText: /^Start$/i }) })
-      .filter({ has: page.locator('thead th', { hasText: /^End$/i }) })
-      .first();
-
-    const rows = sessionsTable.locator('tbody tr');
-    const rowCount = await rows.count();
-    if (DEBUG_SYNC) {
-      console.log(`Inspecting playtimes page ${pageNumber}: ${rowCount} row(s)`);
-    }
-    if (rowCount === 0) {
-      break;
-    }
-
-    let sawRecentRow = false;
-
-    for (let rowIndex = 0; rowIndex < rowCount; rowIndex += 1) {
-      const row = rows.nth(rowIndex);
-      const cells = row.locator('td');
-      const cellCount = await cells.count();
-      if (cellCount < 6) {
-        continue;
-      }
-
-      const title = collapseSpaces(await cells.nth(1).innerText().catch(() => ''));
-      const durationCell = cells.nth(3);
-      const durationText = collapseSpaces(await durationCell.innerText().catch(() => ''));
-      const durationSort = (await durationCell.getAttribute('data-sort').catch(() => null))?.trim() ?? '';
-      const startText = collapseSpaces(await cells.nth(4).innerText().catch(() => ''));
-      const startDate = parseDateCandidates(startText);
-      const durationFromSort = /^\d+$/.test(durationSort) ? Math.round(Number(durationSort) / 60) : null;
-      const duration = durationFromSort ?? parseDuration(durationText);
-
-      if (DEBUG_SYNC) {
-        const iso = startDate ? startDate.toISOString() : 'invalid-date';
-        console.log(`Row ${rowIndex + 1}: title="${title}" durationText="${durationText}" durationSort="${durationSort}" start="${startText}" parsedStart=${iso} parsedMinutes=${duration ?? 'invalid'}`);
-      }
-
-      if (!title || !duration || !startDate) {
-        continue;
-      }
-
-      if (startDate.getTime() < yesterdayCutoff.getTime() && startDate < todayDate) {
-        continue;
-      }
-
-      sawRecentRow = true;
-      sessions.push({ title, minutes: duration, startedAt: startDate });
-    }
-
-    if (!sawRecentRow) {
-      break;
-    }
-  }
-
-  return aggregateSessions(sessions);
 }
 
 async function waitForBackloggdReady(page: Page, timeoutMs = 90_000): Promise<void> {
@@ -843,7 +544,7 @@ async function main(): Promise<void> {
   try {
     console.log('Scraping PS-Timetracker playtimes...');
     await loginIfNeeded(page);
-    const games = await scrapeTodaySessions(page);
+    const games = await scrapeTodaySessions(page, { referenceDate: REFERENCE_DATE, debug: DEBUG_SYNC });
     console.log(`Found ${games.length} aggregated game(s): ${games.map((game) => `${game.title} (${game.hours}h ${game.minutes}m)`).join(', ') || 'none'}`);
 
     if (games.length === 0) {
@@ -854,31 +555,31 @@ async function main(): Promise<void> {
     console.log('Opening Backloggd playing page without initial login...');
 
     for (const game of games) {
+      console.log(`Syncing ${game.title} -> ${toDisplayDuration(durationToMinutes(game.hours, game.minutes))}`);
       try {
-        console.log(`Syncing ${game.title} -> ${toDisplayDuration(durationToMinutes(game.hours, game.minutes))}`);
         await page.goto(backloggdUrl('/u/henriquetavares/playing/'), { waitUntil: 'domcontentloaded' });
         await page.waitForLoadState('networkidle').catch(() => undefined);
         await waitForBackloggdReady(page);
         updateBackloggdOriginFromUrl(page.url());
         await logPlaySession(page, game);
-
-        if (BACKLOGGD_STORAGE_STATE_PATH) {
-          const lastSlash = BACKLOGGD_STORAGE_STATE_PATH.lastIndexOf('/');
-          const dir = lastSlash >= 0 ? BACKLOGGD_STORAGE_STATE_PATH.slice(0, lastSlash) : '.';
-          if (dir) {
-            await mkdir(dir, { recursive: true }).catch(() => undefined);
-          }
-          await context.storageState({ path: BACKLOGGD_STORAGE_STATE_PATH });
-          if (DEBUG_SYNC) {
-            console.log(`Saved Playwright storage state at ${BACKLOGGD_STORAGE_STATE_PATH}`);
-          }
-        }
-
-        console.log(`Synced ${game.title} successfully.`);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        console.warn(`Skipping ${game.title}: ${message}`);
+        throw new Error(`Failed syncing ${game.title}: ${message}`);
       }
+
+      if (BACKLOGGD_STORAGE_STATE_PATH) {
+        const lastSlash = BACKLOGGD_STORAGE_STATE_PATH.lastIndexOf('/');
+        const dir = lastSlash >= 0 ? BACKLOGGD_STORAGE_STATE_PATH.slice(0, lastSlash) : '.';
+        if (dir) {
+          await mkdir(dir, { recursive: true }).catch(() => undefined);
+        }
+        await context.storageState({ path: BACKLOGGD_STORAGE_STATE_PATH });
+        if (DEBUG_SYNC) {
+          console.log(`Saved Playwright storage state at ${BACKLOGGD_STORAGE_STATE_PATH}`);
+        }
+      }
+
+      console.log(`Synced ${game.title} successfully.`);
     }
   } finally {
     await context.close().catch(() => undefined);
