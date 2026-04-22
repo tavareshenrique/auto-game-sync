@@ -22,6 +22,18 @@ const PSN_NAME = process.env.PS_TIMETRACKER_PSN_NAME ?? 'HTavares97';
 const HEADLESS = process.env.HEADLESS !== 'false';
 const REFERENCE_DATE = getReferenceDate();
 const DEBUG_SYNC = process.env.SYNC_DEBUG === 'true';
+const BACKLOGGD_CONTEXT_OPTIONS = {
+  viewport: { width: 1440, height: 900 },
+  locale: 'en-US',
+  timezoneId: 'America/Sao_Paulo',
+  colorScheme: 'light' as const,
+  deviceScaleFactor: 1,
+  hasTouch: false,
+  isMobile: false,
+  javaScriptEnabled: true,
+  userAgent:
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+};
 
 function requireEnv(name: string): string {
   const value = process.env[name];
@@ -639,51 +651,23 @@ async function ensureJournalCalendarVisible(page: Page): Promise<void> {
   await calendar.waitFor({ state: 'visible', timeout: 20_000 });
 }
 
-async function waitForBackloggdMutation(page: Page, timeoutMs = 4_000): Promise<void> {
-  await page.waitForResponse(
-    (response) => {
-      const request = response.request();
-      const method = request.method().toUpperCase();
-      if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
-        return false;
-      }
-
-      try {
-        const parsed = new URL(response.url());
-        if (!isBackloggdHost(parsed.hostname)) {
-          return false;
-        }
-
-        const path = parsed.pathname.toLowerCase();
-        const looksLikeLogMutation = /play|log|journal|entry|session/.test(path);
-        if (!looksLikeLogMutation) {
-          return false;
-        }
-
-        return response.status() >= 200 && response.status() < 400;
-      } catch {
-        return false;
-      }
-    },
-    { timeout: timeoutMs }
-  );
-}
-
 async function confirmPlayDateSaved(page: Page, playDateModal: Locator): Promise<void> {
-  const hiddenPromise = playDateModal.waitFor({ state: 'hidden', timeout: 4_000 });
-  const mutationPromise = waitForBackloggdMutation(page, 4_000);
-
-  await Promise.race([hiddenPromise, mutationPromise]);
-  await page.waitForLoadState('networkidle').catch(() => undefined);
+  await playDateModal.waitFor({ state: 'visible', timeout: 2_000 }).catch(() => undefined);
+  await page.waitForTimeout(1_200);
 }
 
-async function confirmJournalSaved(page: Page): Promise<void> {
+async function confirmJournalSaved(page: Page, gameUrl: string): Promise<void> {
   const journalModal = page.locator('#journal-game-modal').first();
-  const hiddenPromise = journalModal.waitFor({ state: 'hidden', timeout: 5_000 });
-  const mutationPromise = waitForBackloggdMutation(page, 5_000);
+  await journalModal.waitFor({ state: 'visible', timeout: 2_000 }).catch(() => undefined);
+  await page.waitForTimeout(1_200);
 
-  await Promise.race([hiddenPromise, mutationPromise]);
+  await page.goto(gameUrl, { waitUntil: 'domcontentloaded' });
   await page.waitForLoadState('networkidle').catch(() => undefined);
+  await waitForBackloggdReady(page).catch(() => undefined);
+  updateBackloggdOriginFromUrl(page.url());
+
+  const logEditorButton = page.locator('button.log-editor-btn, .log-editor-btn').first();
+  await logEditorButton.waitFor({ state: 'visible', timeout: 15_000 });
 }
 
 async function openGameLogEditor(page: Page, title: string): Promise<void> {
@@ -819,6 +803,8 @@ async function logPlaySession(page: Page, game: GamePlaytime): Promise<void> {
 
   await playDateModal.waitFor({ state: 'visible', timeout: 20_000 });
 
+  const gameUrl = page.url();
+
   const hoursInput = playDateModal.locator('#play_date_hours').first();
   const minutesInput = playDateModal.locator('#play_date_minutes').first();
   await hoursInput.waitFor({ state: 'visible', timeout: 15_000 });
@@ -835,18 +821,22 @@ async function logPlaySession(page: Page, game: GamePlaytime): Promise<void> {
   const saveLogButton = page.locator('#btn-save-log .save-log, button.save-log').first();
   await saveLogButton.waitFor({ state: 'visible', timeout: 20_000 });
   await saveLogButton.click({ force: true });
-  await confirmJournalSaved(page);
+  await confirmJournalSaved(page, gameUrl);
 }
 
 async function main(): Promise<void> {
-  const browser = await chromium.launch({ headless: HEADLESS });
+  const browser = await chromium.launch({
+    headless: HEADLESS,
+    args: ['--disable-blink-features=AutomationControlled']
+  });
   const canReuseState = BACKLOGGD_STORAGE_STATE_PATH && (await fileExists(BACKLOGGD_STORAGE_STATE_PATH));
   const context: BrowserContext = await browser.newContext(
     canReuseState
       ? {
-          storageState: BACKLOGGD_STORAGE_STATE_PATH
+          storageState: BACKLOGGD_STORAGE_STATE_PATH,
+          ...BACKLOGGD_CONTEXT_OPTIONS
         }
-      : undefined
+      : BACKLOGGD_CONTEXT_OPTIONS
   );
   const page = await context.newPage();
 
