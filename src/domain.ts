@@ -59,7 +59,7 @@ function durationToMinutes(hours: number, minutes: number): number {
 function minutesToDuration(totalMinutes: number): { hours: number; minutes: number } {
   return {
     hours: Math.floor(totalMinutes / 60),
-    minutes: totalMinutes % 60
+    minutes: totalMinutes % 60,
   };
 }
 
@@ -123,7 +123,9 @@ function parseDateCandidates(text: string, referenceDate: Date): Date | null {
   if (explicitDate) {
     const first = Number(explicitDate[1]);
     const second = Number(explicitDate[2]);
-    const year = explicitDate[3] ? Number(explicitDate[3].length === 2 ? `20${explicitDate[3]}` : explicitDate[3]) : now.getFullYear();
+    const year = explicitDate[3]
+      ? Number(explicitDate[3].length === 2 ? `20${explicitDate[3]}` : explicitDate[3])
+      : now.getFullYear();
     const candidateFirst = new Date(year, second - 1, first);
     const candidateSecond = new Date(year, first - 1, second);
     return isNaN(candidateFirst.getTime()) ? candidateSecond : candidateFirst;
@@ -165,4 +167,14 @@ function aggregateSessions(sessions: RawSession[]): GamePlaytime[] {
 }
 
 export type { GamePlaytime, RawSession };
-export { aggregateSessions, collapseSpaces, durationToMinutes, getReferenceDate, minutesToDuration, normalizeText, parseDateCandidates, parseDuration, toDisplayDuration };
+export {
+  aggregateSessions,
+  collapseSpaces,
+  durationToMinutes,
+  getReferenceDate,
+  minutesToDuration,
+  normalizeText,
+  parseDateCandidates,
+  parseDuration,
+  toDisplayDuration,
+};

@@ -26,12 +26,12 @@ Fluxo de alto nível:
 4. Converte duração para minutos e agrega por título.
 5. Abre o Backloggd e garante sessão válida.
 6. Para cada jogo agregado:
-	- abre a página do jogo a partir de Playing;
-	- abre o editor completo de log;
-	- alinha o calendário ao mês/ano da data de referência;
-	- seleciona o dia;
-	- preenche horas/minutos;
-	- salva o play date e depois o journal.
+   - abre a página do jogo a partir de Playing;
+   - abre o editor completo de log;
+   - alinha o calendário ao mês/ano da data de referência;
+   - seleciona o dia;
+   - preenche horas/minutos;
+   - salva o play date e depois o journal.
 7. Opcionalmente salva `storageState` do Playwright para reutilizar sessão.
 
 ## Requisitos
@@ -65,23 +65,23 @@ cp .env.example .env
 
 ### Variáveis de ambiente
 
-| Variável | Obrigatória | Descrição |
-| --- | --- | --- |
-| `BACKLOGGD_EMAIL` | Sim | E-mail de login no Backloggd. |
-| `BACKLOGGD_PWD` | Sim | Senha de login no Backloggd. |
-| `BACKLOGGD_STORAGE_STATE_PATH` | Não | Caminho para salvar/reusar sessão Playwright (ex.: `storage/backloggd-state.json`). |
-| `PS_TIMETRACKER_CODE` | Sim | Código de acesso do PS-Timetracker. |
-| `PS_TIMETRACKER_PSN_NAME` | Recomendado | PSN usada no formulário de login do PS-Timetracker quando há dois campos. |
-| `HEADLESS` | Não | `true` (default) para headless; `false` para modo visível. |
-| `SYNC_DEBUG` | Não | `true` para logs detalhados (linhas lidas, parsing, challenge etc.). |
-| `SYNC_REFERENCE_DATE` | Não | Data fixa no formato ISO (`YYYY-MM-DD`) para sincronizar (ex.: replay). |
-| `SYNC_REFERENCE_DAYS_OFFSET` | Não | Offset em dias relativo a hoje (ex.: `-1` para ontem). Ignorado se `SYNC_REFERENCE_DATE` estiver definido. |
-| `SMTP_HOST` | CI | Host do servidor SMTP para envio do e-mail de resumo do sync. |
-| `SMTP_PORT` | CI | Porta do servidor SMTP (ex.: `587`). |
-| `SMTP_USERNAME` | CI | Usuário/autenticação da conta SMTP. |
-| `SMTP_PASSWORD` | CI | Senha/token da conta SMTP. |
-| `SYNC_EMAIL_FROM` | CI | Remetente do e-mail de resumo (ex.: `bot@dominio.com`). |
-| `SYNC_EMAIL_TO` | CI | Destinatário(s) do e-mail de resumo (separar múltiplos por vírgula, se aplicável). |
+| Variável                       | Obrigatória | Descrição                                                                                                  |
+| ------------------------------ | ----------- | ---------------------------------------------------------------------------------------------------------- |
+| `BACKLOGGD_EMAIL`              | Sim         | E-mail de login no Backloggd.                                                                              |
+| `BACKLOGGD_PWD`                | Sim         | Senha de login no Backloggd.                                                                               |
+| `BACKLOGGD_STORAGE_STATE_PATH` | Não         | Caminho para salvar/reusar sessão Playwright (ex.: `storage/backloggd-state.json`).                        |
+| `PS_TIMETRACKER_CODE`          | Sim         | Código de acesso do PS-Timetracker.                                                                        |
+| `PS_TIMETRACKER_PSN_NAME`      | Recomendado | PSN usada no formulário de login do PS-Timetracker quando há dois campos.                                  |
+| `HEADLESS`                     | Não         | `true` (default) para headless; `false` para modo visível.                                                 |
+| `SYNC_DEBUG`                   | Não         | `true` para logs detalhados (linhas lidas, parsing, challenge etc.).                                       |
+| `SYNC_REFERENCE_DATE`          | Não         | Data fixa no formato ISO (`YYYY-MM-DD`) para sincronizar (ex.: replay).                                    |
+| `SYNC_REFERENCE_DAYS_OFFSET`   | Não         | Offset em dias relativo a hoje (ex.: `-1` para ontem). Ignorado se `SYNC_REFERENCE_DATE` estiver definido. |
+| `SMTP_HOST`                    | CI          | Host do servidor SMTP para envio do e-mail de resumo do sync.                                              |
+| `SMTP_PORT`                    | CI          | Porta do servidor SMTP (ex.: `587`).                                                                       |
+| `SMTP_USERNAME`                | CI          | Usuário/autenticação da conta SMTP.                                                                        |
+| `SMTP_PASSWORD`                | CI          | Senha/token da conta SMTP.                                                                                 |
+| `SYNC_EMAIL_FROM`              | CI          | Remetente do e-mail de resumo (ex.: `bot@dominio.com`).                                                    |
+| `SYNC_EMAIL_TO`                | CI          | Destinatário(s) do e-mail de resumo (separar múltiplos por vírgula, se aplicável).                         |
 
 ### Data de referência
 
