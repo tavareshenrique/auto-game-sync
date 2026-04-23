@@ -248,6 +248,7 @@ async function findPlayingGameCard(page: Page, title: string) {
   const normalizedTitle = normalizeText(title);
   const posters = page.locator('#game-lists .card.game-cover');
   const count = await posters.count();
+  const compactTitle = normalizedTitle.replace(/[^a-z0-9]+/g, '');
 
   for (let index = 0; index < Math.min(count, 500); index += 1) {
     const candidate = posters.nth(index);
@@ -261,13 +262,12 @@ async function findPlayingGameCard(page: Page, title: string) {
       continue;
     }
 
-    if (haystack === normalizedTitle || haystack.includes(normalizedTitle) || normalizedTitle.includes(haystack)) {
+    if (haystack === normalizedTitle || haystack.includes(normalizedTitle)) {
       return candidate;
     }
 
     const compactHaystack = haystack.replace(/[^a-z0-9]+/g, '');
-    const compactTitle = normalizedTitle.replace(/[^a-z0-9]+/g, '');
-    if (compactHaystack.includes(compactTitle) || compactTitle.includes(compactHaystack)) {
+    if (compactHaystack.includes(compactTitle)) {
       return candidate;
     }
   }
@@ -301,20 +301,28 @@ async function alignCalendarToReferenceDate(page: Page): Promise<void> {
   for (let attempts = 0; attempts < 24; attempts += 1) {
     const monthText = collapseSpaces(
       (await page
-        .locator('#log-editor-full button[data-id="month-selector"] .filter-option-inner-inner')
+        .locator('#playthrough-calendar button[data-id="month-selector"] .filter-option-inner-inner, button[data-id="month-selector"] .filter-option-inner-inner')
         .first()
         .innerText()
         .catch(() => '')) ||
-        (await page.locator('#log-editor-full button[data-id="month-selector"]').first().getAttribute('title').catch(() => '')) ||
+        (await page
+          .locator('#playthrough-calendar button[data-id="month-selector"], button[data-id="month-selector"]')
+          .first()
+          .getAttribute('title')
+          .catch(() => '')) ||
         ''
     );
     const yearText = collapseSpaces(
       (await page
-        .locator('#log-editor-full button[data-id="year-selector"] .filter-option-inner-inner')
+        .locator('#playthrough-calendar button[data-id="year-selector"] .filter-option-inner-inner, button[data-id="year-selector"] .filter-option-inner-inner')
         .first()
         .innerText()
         .catch(() => '')) ||
-        (await page.locator('#log-editor-full button[data-id="year-selector"]').first().getAttribute('title').catch(() => '')) ||
+        (await page
+          .locator('#playthrough-calendar button[data-id="year-selector"], button[data-id="year-selector"]')
+          .first()
+          .getAttribute('title')
+          .catch(() => '')) ||
         ''
     );
 
@@ -338,29 +346,62 @@ async function alignCalendarToReferenceDate(page: Page): Promise<void> {
 }
 
 async function ensureJournalCalendarVisible(page: Page): Promise<void> {
-  const calendar = page.locator('#log-editor-full #playthrough-calendar').first();
+  const calendar = page.locator('#log-editor-full #playthrough-calendar, #playthrough-calendar').first();
   if (await calendar.isVisible().catch(() => false)) {
     return;
   }
 
-  const journalNav = page.locator('#journal-nav[editor_section="journal"], .journal-section-nav#journal-nav').first();
-  if (await journalNav.count()) {
-    await journalNav.click({ force: true });
-    await page.waitForTimeout(300);
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    await waitForBackloggdReady(page, 15_000).catch(() => undefined);
+
+    const fullEditorToggle = page
+      .locator('#switch-editor-to-full, button:has-text("Full Editor"), button:has-text("Switch to Full")')
+      .first();
+    if ((await fullEditorToggle.count()) && (await fullEditorToggle.isVisible().catch(() => false))) {
+      await fullEditorToggle.click({ force: true });
+      await page.waitForTimeout(300);
+    }
+
+    const journalNav = page
+      .locator('#journal-nav[editor_section="journal"], .journal-section-nav#journal-nav, #journal-nav, .journal-section-nav[editor_section="journal"], [editor_section="journal"]')
+      .first();
+    if ((await journalNav.count()) && (await journalNav.isVisible().catch(() => false))) {
+      await journalNav.click({ force: true });
+      await page.waitForTimeout(300);
+    }
+
+    if (await calendar.isVisible().catch(() => false)) {
+      return;
+    }
+
+    await page.waitForTimeout(800);
   }
 
   await calendar.waitFor({ state: 'visible', timeout: 20_000 });
 }
 
 async function confirmPlayDateSaved(page: Page, playDateModal: Locator): Promise<void> {
-  await playDateModal.waitFor({ state: 'visible', timeout: 2_000 }).catch(() => undefined);
-  await page.waitForTimeout(1_200);
+  // Saving a play date is asynchronous; avoid proceeding while the modal is still mid-submit.
+  await playDateModal.waitFor({ state: 'hidden', timeout: 12_000 }).catch(() => undefined);
+
+  const stillVisible = await playDateModal.isVisible().catch(() => false);
+  if (stillVisible) {
+    throw new Error('Play date modal remained open after clicking save. The playtime update was likely not persisted.');
+  }
+
+  await page.waitForTimeout(500);
 }
 
 async function confirmJournalSaved(page: Page, gameUrl: string): Promise<void> {
   const journalModal = page.locator('#journal-game-modal').first();
-  await journalModal.waitFor({ state: 'visible', timeout: 2_000 }).catch(() => undefined);
-  await page.waitForTimeout(1_200);
+  await journalModal.waitFor({ state: 'hidden', timeout: 12_000 }).catch(() => undefined);
+
+  const stillVisible = await journalModal.isVisible().catch(() => false);
+  if (stillVisible) {
+    throw new Error('Journal modal remained open after clicking save log. Backloggd may not have persisted the update.');
+  }
+
+  await page.waitForTimeout(500);
 
   await page.goto(gameUrl, { waitUntil: 'domcontentloaded' });
   await page.waitForLoadState('networkidle').catch(() => undefined);
@@ -449,7 +490,7 @@ async function logPlaySession(page: Page, game: GamePlaytime): Promise<void> {
   await alignCalendarToReferenceDate(page);
 
   const targetIsoDate = REFERENCE_DATE.toISOString().slice(0, 10);
-  const dayCell = page.locator(`#log-editor-full #playthrough-calendar td.fc-day[data-date="${targetIsoDate}"]`).first();
+  const dayCell = page.locator(`#playthrough-calendar td.fc-day[data-date="${targetIsoDate}"]`).first();
   await dayCell.waitFor({ state: 'visible', timeout: 15_000 });
   await dayCell.click({ force: true });
 
@@ -458,7 +499,7 @@ async function logPlaySession(page: Page, game: GamePlaytime): Promise<void> {
   for (let attempt = 0; attempt < 4; attempt += 1) {
     const clickedDayEvent = await page
       .evaluate((isoDate) => {
-        const dayTop = document.querySelector(`#log-editor-full #playthrough-calendar td.fc-day-top[data-date="${isoDate}"]`);
+        const dayTop = document.querySelector(`#playthrough-calendar td.fc-day-top[data-date="${isoDate}"]`);
         if (!dayTop) {
           return false;
         }
