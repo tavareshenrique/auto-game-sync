@@ -1,8 +1,12 @@
 import type { Page } from 'playwright';
 import { aggregateSessions, collapseSpaces, parseDateCandidates, parseDuration, type GamePlaytime, type RawSession } from './domain.js';
 
-const PLAYTIMES_URL = 'https://ps-timetracker.com/profile/HTavares97/playtimes';
-const PSN_NAME = process.env.PS_TIMETRACKER_PSN_NAME ?? 'HTavares97';
+if (!process.env.PS_TIMETRACKER_PSN_NAME) {
+  throw new Error('PS_TIMETRACKER_PSN_NAME environment variable is required.');
+}
+
+const PLAYTIMES_URL = `https://ps-timetracker.com/profile/${process.env.PS_TIMETRACKER_PSN_NAME}/playtimes`;
+const PSN_NAME = process.env.PS_TIMETRACKER_PSN_NAME;
 
 type PSTimetrackerOptions = {
   referenceDate: Date;
