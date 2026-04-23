@@ -72,9 +72,9 @@ async function loginIfNeeded(page: Page): Promise<void> {
 
 async function scrapeTodaySessions(page: Page, options: PSTimetrackerOptions): Promise<GamePlaytime[]> {
   const { referenceDate, debug = false } = options;
-  const todayDate = referenceDate;
-  const yesterdayCutoff = new Date(referenceDate);
-  yesterdayCutoff.setDate(yesterdayCutoff.getDate() - 1);
+  const dayStart = new Date(referenceDate.getFullYear(), referenceDate.getMonth(), referenceDate.getDate());
+  const dayEnd = new Date(dayStart);
+  dayEnd.setDate(dayEnd.getDate() + 1);
   const sessions: RawSession[] = [];
 
   for (let pageNumber = 1; pageNumber <= 5; pageNumber += 1) {
@@ -97,7 +97,7 @@ async function scrapeTodaySessions(page: Page, options: PSTimetrackerOptions): P
       break;
     }
 
-    let sawRecentRow = false;
+    let sawRowOnOrAfterDayStart = false;
 
     for (let rowIndex = 0; rowIndex < rowCount; rowIndex += 1) {
       const row = rows.nth(rowIndex);
@@ -125,15 +125,21 @@ async function scrapeTodaySessions(page: Page, options: PSTimetrackerOptions): P
         continue;
       }
 
-      if (startDate.getTime() < yesterdayCutoff.getTime() && startDate < todayDate) {
+      if (startDate >= dayEnd) {
+        // Ignore rows after the target day.
         continue;
       }
 
-      sawRecentRow = true;
+      if (startDate < dayStart) {
+        // Table is sorted by newest first; a full page older than dayStart means we can stop paginating.
+        continue;
+      }
+
+      sawRowOnOrAfterDayStart = true;
       sessions.push({ title, minutes: duration, startedAt: startDate });
     }
 
-    if (!sawRecentRow) {
+    if (!sawRowOnOrAfterDayStart) {
       break;
     }
   }

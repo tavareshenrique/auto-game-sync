@@ -2,7 +2,7 @@ name: Sync Playtimes
 
 on:
   schedule:
-    - cron: '0 9 * * *'
+    - cron: '0 6 * * *'
   workflow_dispatch:
 
 jobs:
@@ -28,6 +28,7 @@ jobs:
       
       - run: pnpm run sync:headless
         env:
+          TZ: America/Sao_Paulo
           BACKLOGGD_EMAIL: ${{ secrets.BACKLOGGD_EMAIL }}
           BACKLOGGD_PWD: ${{ secrets.BACKLOGGD_PWD }}
           PS_TIMETRACKER_CODE: ${{ secrets.PS_TIMETRACKER_CODE }}
