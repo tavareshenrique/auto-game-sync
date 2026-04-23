@@ -36,7 +36,10 @@ test.describe('parseSessionRow', () => {
 
   test('uses durationSort (seconds) when it is a pure integer', () => {
     // durationSort stores seconds; function converts to minutes via Math.round
-    const result = parseSessionRow(cells({ durationSort: '3600', durationText: 'irrelevant' }), REF);
+    const result = parseSessionRow(
+      cells({ durationSort: '3600', durationText: 'irrelevant' }),
+      REF
+    );
     expect(result).not.toBeNull();
     expect(result!.minutes).toBe(60);
   });
@@ -59,7 +62,10 @@ test.describe('parseSessionRow', () => {
 
   test('durationSort takes precedence over durationText', () => {
     // durationSort=7200s=120min, durationText says 30min — sort wins
-    const result = parseSessionRow(cells({ durationSort: '7200', durationText: '30 minutes' }), REF);
+    const result = parseSessionRow(
+      cells({ durationSort: '7200', durationText: '30 minutes' }),
+      REF
+    );
     expect(result!.minutes).toBe(120);
   });
 

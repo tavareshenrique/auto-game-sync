@@ -1,7 +1,14 @@
 import 'dotenv/config';
 import { mkdir, access, writeFile } from 'node:fs/promises';
 import { chromium, type Page, type BrowserContext, type Locator } from 'playwright';
-import { collapseSpaces, durationToMinutes, getReferenceDate, normalizeText, toDisplayDuration, type GamePlaytime } from './domain.js';
+import {
+  collapseSpaces,
+  durationToMinutes,
+  getReferenceDate,
+  normalizeText,
+  toDisplayDuration,
+  type GamePlaytime,
+} from './domain.js';
 import { loginIfNeeded, scrapeSessions } from './ps-timetracker.js';
 
 const BACKLOGGD_DEFAULT_ORIGIN = 'https://backloggd.com';
@@ -21,7 +28,7 @@ const BACKLOGGD_CONTEXT_OPTIONS = {
   isMobile: false,
   javaScriptEnabled: true,
   userAgent:
-    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
 };
 
 function requireEnv(name: string): string {
@@ -33,7 +40,11 @@ function requireEnv(name: string): string {
 }
 
 function isBackloggdHost(hostname: string): boolean {
-  return hostname === 'backloggd.com' || hostname === 'www.backloggd.com' || hostname.endsWith('.backloggd.com');
+  return (
+    hostname === 'backloggd.com' ||
+    hostname === 'www.backloggd.com' ||
+    hostname.endsWith('.backloggd.com')
+  );
 }
 
 function updateBackloggdOriginFromUrl(url: string): void {
@@ -90,8 +101,8 @@ async function writeSyncSummary(games: GamePlaytime[]): Promise<void> {
     games: games.map((game) => ({
       title: game.title,
       playedTime: toDisplayDuration(durationToMinutes(game.hours, game.minutes)),
-      registeredDay
-    }))
+      registeredDay,
+    })),
   };
 
   await mkdir(parentDir(SYNC_SUMMARY_PATH), { recursive: true }).catch(() => undefined);
@@ -117,7 +128,10 @@ async function waitForBackloggdReady(page: Page, timeoutMs = 90_000): Promise<vo
   while (Date.now() - start < timeoutMs) {
     const url = page.url();
     const title = await page.title().catch(() => '');
-    const challengeVisible = await page.getByText(/hold tight|secure connection|checking your browser/i).isVisible().catch(() => false);
+    const challengeVisible = await page
+      .getByText(/hold tight|secure connection|checking your browser/i)
+      .isVisible()
+      .catch(() => false);
     const onChallengePage =
       url.includes('/.bunny-shield/') ||
       /establishing a secure connection/i.test(title) ||
@@ -128,17 +142,24 @@ async function waitForBackloggdReady(page: Page, timeoutMs = 90_000): Promise<vo
     }
 
     if (DEBUG_SYNC) {
-      console.log(`Backloggd challenge detected (${Math.round((Date.now() - start) / 1000)}s). Waiting...`);
+      console.log(
+        `Backloggd challenge detected (${Math.round((Date.now() - start) / 1000)}s). Waiting...`
+      );
     }
 
     await page.waitForTimeout(1_000);
     await page.waitForLoadState('domcontentloaded').catch(() => undefined);
   }
 
-  throw new Error('Backloggd challenge did not clear in time. Retry later or run once with HEADLESS=false to validate access.');
+  throw new Error(
+    'Backloggd challenge did not clear in time. Retry later or run once with HEADLESS=false to validate access.'
+  );
 }
 
-async function waitForBackloggdAuthSurface(page: Page, timeoutMs = 120_000): Promise<'session' | 'login-form'> {
+async function waitForBackloggdAuthSurface(
+  page: Page,
+  timeoutMs = 120_000
+): Promise<'session' | 'login-form'> {
   const start = Date.now();
 
   while (Date.now() - start < timeoutMs) {
@@ -148,15 +169,25 @@ async function waitForBackloggdAuthSurface(page: Page, timeoutMs = 120_000): Pro
       return 'session';
     }
 
-    const emailVisible = await page.locator('#user_login, input[name="user[login]"]').first().isVisible().catch(() => false);
-    const passwordVisible = await page.locator('#user_password, input[name="user[password]"]').first().isVisible().catch(() => false);
+    const emailVisible = await page
+      .locator('#user_login, input[name="user[login]"]')
+      .first()
+      .isVisible()
+      .catch(() => false);
+    const passwordVisible = await page
+      .locator('#user_password, input[name="user[password]"]')
+      .first()
+      .isVisible()
+      .catch(() => false);
 
     if (emailVisible && passwordVisible) {
       return 'login-form';
     }
 
     if (DEBUG_SYNC) {
-      console.log(`Waiting Backloggd auth surface (${Math.round((Date.now() - start) / 1000)}s)...`);
+      console.log(
+        `Waiting Backloggd auth surface (${Math.round((Date.now() - start) / 1000)}s)...`
+      );
     }
 
     await page.waitForTimeout(1_000);
@@ -165,27 +196,43 @@ async function waitForBackloggdAuthSurface(page: Page, timeoutMs = 120_000): Pro
   throw new Error(
     `Backloggd auth surface not available at ${page.url()}. Current title: ${await page
       .title()
-      .catch(() => 'unknown')}. If Bunny Shield keeps blocking automation, run once with HEADLESS=false and reuse BACKLOGGD_STORAGE_STATE_PATH.`
+      .catch(
+        () => 'unknown'
+      )}. If Bunny Shield keeps blocking automation, run once with HEADLESS=false and reuse BACKLOGGD_STORAGE_STATE_PATH.`
   );
 }
 
 async function hasBackloggdSession(page: Page): Promise<boolean> {
-  const quickLogVisible = await page.getByText(/quick log/i).isVisible().catch(() => false);
+  const quickLogVisible = await page
+    .getByText(/quick log/i)
+    .isVisible()
+    .catch(() => false);
   if (quickLogVisible) {
     return true;
   }
 
-  const logOutVisible = await page.getByRole('link', { name: /log out/i }).first().isVisible().catch(() => false);
+  const logOutVisible = await page
+    .getByRole('link', { name: /log out/i })
+    .first()
+    .isVisible()
+    .catch(() => false);
   if (logOutVisible) {
     return true;
   }
 
-  const profileDropdownVisible = await page.locator('#profile-li, #navbarDropdown').first().isVisible().catch(() => false);
+  const profileDropdownVisible = await page
+    .locator('#profile-li, #navbarDropdown')
+    .first()
+    .isVisible()
+    .catch(() => false);
   if (profileDropdownVisible) {
     return true;
   }
 
-  const addGameVisible = await page.locator('#add-a-game').isVisible().catch(() => false);
+  const addGameVisible = await page
+    .locator('#add-a-game')
+    .isVisible()
+    .catch(() => false);
   return addGameVisible;
 }
 
@@ -208,7 +255,9 @@ async function loginBackloggdFromGame(page: Page, returnUrl: string): Promise<vo
   if (!(await hasBackloggdSession(page))) {
     const emailInput = page.locator('#user_login, input[name="user[login]"]').first();
     const passwordInput = page.locator('#user_password, input[name="user[password]"]').first();
-    const rememberMeInput = page.locator('#user_remember_me, input[name="user[remember_me]"]').first();
+    const rememberMeInput = page
+      .locator('#user_remember_me, input[name="user[remember_me]"]')
+      .first();
     const loginButton = page.locator('#log-in-btn, button[name="commit"]').first();
 
     await emailInput.waitFor({ state: 'visible', timeout: 15_000 });
@@ -233,7 +282,9 @@ async function loginBackloggdFromGame(page: Page, returnUrl: string): Promise<vo
   const bouncedToLogin = /\/login\/?$/i.test(new URL(page.url()).pathname);
   if (bouncedToLogin || !(await hasBackloggdSession(page))) {
     const currentTitle = await page.title().catch(() => 'unknown');
-    throw new Error(`Backloggd login from game page failed. url=${page.url()} title=${currentTitle}`);
+    throw new Error(
+      `Backloggd login from game page failed. url=${page.url()} title=${currentTitle}`
+    );
   }
 }
 
@@ -246,10 +297,22 @@ async function findPlayingGameCard(page: Page, title: string) {
   for (let index = 0; index < Math.min(count, 500); index += 1) {
     const candidate = posters.nth(index);
     const candidateText = (await candidate.textContent().catch(() => '')) ?? '';
-    const imageAlt = normalizeText((await candidate.locator('img').first().getAttribute('alt').catch(() => '')) ?? '');
+    const imageAlt = normalizeText(
+      (await candidate
+        .locator('img')
+        .first()
+        .getAttribute('alt')
+        .catch(() => '')) ?? ''
+    );
     const aria = normalizeText((await candidate.getAttribute('aria-label')) ?? '');
     const titleAttr = normalizeText((await candidate.getAttribute('title')) ?? '');
-    const href = normalizeText((await candidate.locator('a').first().getAttribute('href').catch(() => '')) ?? '');
+    const href = normalizeText(
+      (await candidate
+        .locator('a')
+        .first()
+        .getAttribute('href')
+        .catch(() => '')) ?? ''
+    );
     const haystack = [normalizeText(candidateText), imageAlt, aria, titleAttr, href].join(' ');
     if (!haystack) {
       continue;
@@ -281,7 +344,7 @@ function getMonthIndex(monthName: string): number {
     'september',
     'october',
     'november',
-    'december'
+    'december',
   ];
 
   return names.indexOf(monthName.toLowerCase());
@@ -294,12 +357,16 @@ async function alignCalendarToReferenceDate(page: Page): Promise<void> {
   for (let attempts = 0; attempts < 24; attempts += 1) {
     const monthText = collapseSpaces(
       (await page
-        .locator('#playthrough-calendar button[data-id="month-selector"] .filter-option-inner-inner, button[data-id="month-selector"] .filter-option-inner-inner')
+        .locator(
+          '#playthrough-calendar button[data-id="month-selector"] .filter-option-inner-inner, button[data-id="month-selector"] .filter-option-inner-inner'
+        )
         .first()
         .innerText()
         .catch(() => '')) ||
         (await page
-          .locator('#playthrough-calendar button[data-id="month-selector"], button[data-id="month-selector"]')
+          .locator(
+            '#playthrough-calendar button[data-id="month-selector"], button[data-id="month-selector"]'
+          )
           .first()
           .getAttribute('title')
           .catch(() => '')) ||
@@ -307,12 +374,16 @@ async function alignCalendarToReferenceDate(page: Page): Promise<void> {
     );
     const yearText = collapseSpaces(
       (await page
-        .locator('#playthrough-calendar button[data-id="year-selector"] .filter-option-inner-inner, button[data-id="year-selector"] .filter-option-inner-inner')
+        .locator(
+          '#playthrough-calendar button[data-id="year-selector"] .filter-option-inner-inner, button[data-id="year-selector"] .filter-option-inner-inner'
+        )
         .first()
         .innerText()
         .catch(() => '')) ||
         (await page
-          .locator('#playthrough-calendar button[data-id="year-selector"], button[data-id="year-selector"]')
+          .locator(
+            '#playthrough-calendar button[data-id="year-selector"], button[data-id="year-selector"]'
+          )
           .first()
           .getAttribute('title')
           .catch(() => '')) ||
@@ -327,11 +398,17 @@ async function alignCalendarToReferenceDate(page: Page): Promise<void> {
     }
 
     if (shownMonth < 0 || !Number.isFinite(shownYear)) {
-      throw new Error(`Could not read Backloggd calendar month/year (month="${monthText}", year="${yearText}").`);
+      throw new Error(
+        `Could not read Backloggd calendar month/year (month="${monthText}", year="${yearText}").`
+      );
     }
 
-    const shouldGoNext = shownYear < targetYear || (shownYear === targetYear && shownMonth < targetMonth);
-    await page.locator(shouldGoNext ? '#month-next' : '#month-prev').first().click({ force: true });
+    const shouldGoNext =
+      shownYear < targetYear || (shownYear === targetYear && shownMonth < targetMonth);
+    await page
+      .locator(shouldGoNext ? '#month-next' : '#month-prev')
+      .first()
+      .click({ force: true });
     await page.waitForTimeout(250);
   }
 
@@ -339,7 +416,9 @@ async function alignCalendarToReferenceDate(page: Page): Promise<void> {
 }
 
 async function ensureJournalCalendarVisible(page: Page): Promise<void> {
-  const calendar = page.locator('#log-editor-full #playthrough-calendar, #playthrough-calendar').first();
+  const calendar = page
+    .locator('#log-editor-full #playthrough-calendar, #playthrough-calendar')
+    .first();
   if (await calendar.isVisible().catch(() => false)) {
     return;
   }
@@ -348,15 +427,22 @@ async function ensureJournalCalendarVisible(page: Page): Promise<void> {
     await waitForBackloggdReady(page, 15_000).catch(() => undefined);
 
     const fullEditorToggle = page
-      .locator('#switch-editor-to-full, button:has-text("Full Editor"), button:has-text("Switch to Full")')
+      .locator(
+        '#switch-editor-to-full, button:has-text("Full Editor"), button:has-text("Switch to Full")'
+      )
       .first();
-    if ((await fullEditorToggle.count()) && (await fullEditorToggle.isVisible().catch(() => false))) {
+    if (
+      (await fullEditorToggle.count()) &&
+      (await fullEditorToggle.isVisible().catch(() => false))
+    ) {
       await fullEditorToggle.click({ force: true });
       await page.waitForTimeout(300);
     }
 
     const journalNav = page
-      .locator('#journal-nav[editor_section="journal"], .journal-section-nav#journal-nav, #journal-nav, .journal-section-nav[editor_section="journal"], [editor_section="journal"]')
+      .locator(
+        '#journal-nav[editor_section="journal"], .journal-section-nav#journal-nav, #journal-nav, .journal-section-nav[editor_section="journal"], [editor_section="journal"]'
+      )
       .first();
     if ((await journalNav.count()) && (await journalNav.isVisible().catch(() => false))) {
       await journalNav.click({ force: true });
@@ -379,7 +465,9 @@ async function confirmPlayDateSaved(page: Page, playDateModal: Locator): Promise
 
   const stillVisible = await playDateModal.isVisible().catch(() => false);
   if (stillVisible) {
-    throw new Error('Play date modal remained open after clicking save. The playtime update was likely not persisted.');
+    throw new Error(
+      'Play date modal remained open after clicking save. The playtime update was likely not persisted.'
+    );
   }
 
   await page.waitForTimeout(500);
@@ -391,7 +479,9 @@ async function confirmJournalSaved(page: Page, gameUrl: string): Promise<void> {
 
   const stillVisible = await journalModal.isVisible().catch(() => false);
   if (stillVisible) {
-    throw new Error('Journal modal remained open after clicking save log. Backloggd may not have persisted the update.');
+    throw new Error(
+      'Journal modal remained open after clicking save log. Backloggd may not have persisted the update.'
+    );
   }
 
   await page.waitForTimeout(500);
@@ -457,7 +547,9 @@ async function openGameLogEditor(page: Page, title: string): Promise<void> {
 
   if (!(await hasBackloggdSession(page))) {
     if (DEBUG_SYNC) {
-      console.log(`Backloggd session missing on game page (${gameUrl}). Logging in from game nav link...`);
+      console.log(
+        `Backloggd session missing on game page (${gameUrl}). Logging in from game nav link...`
+      );
     }
     await loginBackloggdFromGame(page, gameUrl);
   }
@@ -472,7 +564,9 @@ async function openGameLogEditor(page: Page, title: string): Promise<void> {
     await fullEditorToggle.click({ force: true });
   }
 
-  const fullEditor = page.locator('#journal-game-modal .modal-body[type="full"], #log-editor-full').first();
+  const fullEditor = page
+    .locator('#journal-game-modal .modal-body[type="full"], #log-editor-full')
+    .first();
   await fullEditor.waitFor({ state: 'visible', timeout: 20_000 });
 }
 
@@ -483,16 +577,22 @@ async function logPlaySession(page: Page, game: GamePlaytime): Promise<void> {
   await alignCalendarToReferenceDate(page);
 
   const targetIsoDate = REFERENCE_DATE.toISOString().slice(0, 10);
-  const dayCell = page.locator(`#playthrough-calendar td.fc-day[data-date="${targetIsoDate}"]`).first();
+  const dayCell = page
+    .locator(`#playthrough-calendar td.fc-day[data-date="${targetIsoDate}"]`)
+    .first();
   await dayCell.waitFor({ state: 'visible', timeout: 15_000 });
   await dayCell.click({ force: true });
 
-  const playDateModal = page.locator('#playthrough-modal-content, #playthrough-modal .modal__content').first();
+  const playDateModal = page
+    .locator('#playthrough-modal-content, #playthrough-modal .modal__content')
+    .first();
   let clickedSpecificDayEvent = false;
   for (let attempt = 0; attempt < 4; attempt += 1) {
     const clickedDayEvent = await page
       .evaluate((isoDate) => {
-        const dayTop = document.querySelector(`#playthrough-calendar td.fc-day-top[data-date="${isoDate}"]`);
+        const dayTop = document.querySelector(
+          `#playthrough-calendar td.fc-day-top[data-date="${isoDate}"]`
+        );
         if (!dayTop) {
           return false;
         }
@@ -562,14 +662,15 @@ async function logPlaySession(page: Page, game: GamePlaytime): Promise<void> {
 async function main(): Promise<void> {
   const browser = await chromium.launch({
     headless: HEADLESS,
-    args: ['--disable-blink-features=AutomationControlled']
+    args: ['--disable-blink-features=AutomationControlled'],
   });
-  const canReuseState = BACKLOGGD_STORAGE_STATE_PATH && (await fileExists(BACKLOGGD_STORAGE_STATE_PATH));
+  const canReuseState =
+    BACKLOGGD_STORAGE_STATE_PATH && (await fileExists(BACKLOGGD_STORAGE_STATE_PATH));
   const context: BrowserContext = await browser.newContext(
     canReuseState
       ? {
           storageState: BACKLOGGD_STORAGE_STATE_PATH,
-          ...BACKLOGGD_CONTEXT_OPTIONS
+          ...BACKLOGGD_CONTEXT_OPTIONS,
         }
       : BACKLOGGD_CONTEXT_OPTIONS
   );
@@ -579,7 +680,9 @@ async function main(): Promise<void> {
     console.log('Scraping PS-Timetracker playtimes...');
     await loginIfNeeded(page);
     const games = await scrapeSessions(page, { referenceDate: REFERENCE_DATE, debug: DEBUG_SYNC });
-    console.log(`Found ${games.length} aggregated game(s): ${games.map((game) => `${game.title} (${game.hours}h ${game.minutes}m)`).join(', ') || 'none'}`);
+    console.log(
+      `Found ${games.length} aggregated game(s): ${games.map((game) => `${game.title} (${game.hours}h ${game.minutes}m)`).join(', ') || 'none'}`
+    );
     await writeSyncSummary(games);
 
     if (games.length === 0) {
@@ -590,9 +693,13 @@ async function main(): Promise<void> {
     console.log('Opening Backloggd playing page without initial login...');
 
     for (const game of games) {
-      console.log(`Syncing ${game.title} -> ${toDisplayDuration(durationToMinutes(game.hours, game.minutes))}`);
+      console.log(
+        `Syncing ${game.title} -> ${toDisplayDuration(durationToMinutes(game.hours, game.minutes))}`
+      );
       try {
-        await page.goto(backloggdUrl('/u/henriquetavares/playing/'), { waitUntil: 'domcontentloaded' });
+        await page.goto(backloggdUrl('/u/henriquetavares/playing/'), {
+          waitUntil: 'domcontentloaded',
+        });
         await page.waitForLoadState('networkidle').catch(() => undefined);
         await waitForBackloggdReady(page);
         updateBackloggdOriginFromUrl(page.url());
@@ -623,6 +730,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((error) => {
-  console.error(error instanceof Error ? error.stack ?? error.message : String(error));
+  console.error(error instanceof Error ? (error.stack ?? error.message) : String(error));
   process.exitCode = 1;
 });
