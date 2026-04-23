@@ -32,4 +32,6 @@ jobs:
           BACKLOGGD_PWD: ${{ secrets.BACKLOGGD_PWD }}
           PS_TIMETRACKER_CODE: ${{ secrets.PS_TIMETRACKER_CODE }}
           PS_TIMETRACKER_PSN_NAME: ${{ secrets.PS_TIMETRACKER_PSN_NAME }}
+          BACKLOGGD_STORAGE_STATE_PATH: storage/backloggd-state.json
           HEADLESS: 'true'
+          SYNC_REFERENCE_DAYS_OFFSET: '-1'
