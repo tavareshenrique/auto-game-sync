@@ -8,6 +8,7 @@ and this project follows Semantic Versioning.
 ## [1.0.0] - 2026-04-23
 
 ### Added
+
 - End-to-end automation with Playwright to sync playtime from PS-Timetracker to Backloggd journal entries.
 - Session scraping and aggregation by reference date, including duration parsing and title normalization.
 - Support for explicit reference date (`SYNC_REFERENCE_DATE`) or day offset (`SYNC_REFERENCE_DAYS_OFFSET`).
@@ -18,8 +19,10 @@ and this project follows Semantic Versioning.
 - Local execution scripts: `pnpm sync`, `pnpm sync:headless`, and `pnpm typecheck`.
 
 ### Changed
+
 - Sync behavior is fail-fast per game: the process exits with non-zero status when any game fails to sync.
 
 ### Notes
+
 - Current implementation targets a fixed Backloggd Playing URL (`/u/henriquetavares/playing/`).
 - PS-Timetracker scraping currently reads up to 5 pages per run.
