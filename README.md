@@ -1,6 +1,12 @@
-# auto-game-sync
+<p align="center">
+	<img src="assets/logo.png" alt="Logo do auto-game-sync" width="220" />
+</p>
 
-Automação em TypeScript + Playwright para sincronizar tempo jogado no PS-Timetracker com o journal do Backloggd.
+<h1 align="center">auto-game-sync</h1>
+
+<p align="center">
+	Automação em TypeScript + Playwright para sincronizar tempo jogado no PS-Timetracker com o journal do Backloggd.
+</p>
 
 O projeto:
 
