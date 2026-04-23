@@ -1,12 +1,28 @@
 import type { Page } from 'playwright';
 import { aggregateSessions, collapseSpaces, parseDateCandidates, parseDuration, type GamePlaytime, type RawSession } from './domain.js';
 
-if (!process.env.PS_TIMETRACKER_PSN_NAME) {
-  throw new Error('PS_TIMETRACKER_PSN_NAME environment variable is required.');
+type RawRowCells = {
+  title: string;
+  durationText: string;
+  durationSort: string;
+  startText: string;
+};
+
+function parseSessionRow(cells: RawRowCells, referenceDate: Date): RawSession | null {
+  const durationFromSort = /^\d+$/.test(cells.durationSort) ? Math.round(Number(cells.durationSort) / 60) : null;
+  const duration = durationFromSort ?? parseDuration(cells.durationText);
+  const startDate = parseDateCandidates(cells.startText, referenceDate);
+
+  if (!cells.title || !duration || !startDate) return null;
+
+  return { title: cells.title, minutes: duration, startedAt: startDate };
 }
 
-const PLAYTIMES_URL = `https://ps-timetracker.com/profile/${process.env.PS_TIMETRACKER_PSN_NAME}/playtimes`;
-const PSN_NAME = process.env.PS_TIMETRACKER_PSN_NAME;
+function getPsnConfig(): { playtimesUrl: string; psnName: string } {
+  const psnName = process.env.PS_TIMETRACKER_PSN_NAME;
+  if (!psnName) throw new Error('PS_TIMETRACKER_PSN_NAME environment variable is required.');
+  return { playtimesUrl: `https://ps-timetracker.com/profile/${psnName}/playtimes`, psnName };
+}
 
 type PSTimetrackerOptions = {
   referenceDate: Date;
@@ -14,7 +30,8 @@ type PSTimetrackerOptions = {
 };
 
 async function loginIfNeeded(page: Page): Promise<void> {
-  await page.goto(PLAYTIMES_URL, { waitUntil: 'domcontentloaded' });
+  const { playtimesUrl, psnName } = getPsnConfig();
+  await page.goto(playtimesUrl, { waitUntil: 'domcontentloaded' });
   await page.waitForLoadState('networkidle').catch(() => undefined);
 
   const sessionsTablePresent =
@@ -56,7 +73,7 @@ async function loginIfNeeded(page: Page): Promise<void> {
   if (inputCount === 1) {
     await inputs.first().fill(code);
   } else if (inputCount >= 2) {
-    await inputs.nth(0).fill(PSN_NAME);
+    await inputs.nth(0).fill(psnName);
     await inputs.nth(1).fill(code);
   } else {
     throw new Error('Could not find a visible PS-Timetracker login input.');
@@ -65,7 +82,7 @@ async function loginIfNeeded(page: Page): Promise<void> {
   await page.getByRole('button', { name: /login/i }).click();
   await page.waitForLoadState('networkidle').catch(() => undefined);
 
-  await page.goto(PLAYTIMES_URL, { waitUntil: 'domcontentloaded' });
+  await page.goto(playtimesUrl, { waitUntil: 'domcontentloaded' });
   await page.waitForLoadState('networkidle').catch(() => undefined);
 
   const stillBlocked = await page.getByText(/you need to login/i).isVisible().catch(() => false);
@@ -75,6 +92,7 @@ async function loginIfNeeded(page: Page): Promise<void> {
 }
 
 async function scrapeSessions(page: Page, options: PSTimetrackerOptions): Promise<GamePlaytime[]> {
+  const { playtimesUrl } = getPsnConfig();
   const { referenceDate, debug = false } = options;
   const dayStart = new Date(referenceDate.getFullYear(), referenceDate.getMonth(), referenceDate.getDate());
   const dayEnd = new Date(dayStart);
@@ -82,7 +100,7 @@ async function scrapeSessions(page: Page, options: PSTimetrackerOptions): Promis
   const sessions: RawSession[] = [];
 
   for (let pageNumber = 1; pageNumber <= 5; pageNumber += 1) {
-    const pageUrl = pageNumber === 1 ? PLAYTIMES_URL : `${PLAYTIMES_URL}?page=${pageNumber}`;
+    const pageUrl = pageNumber === 1 ? playtimesUrl : `${playtimesUrl}?page=${pageNumber}`;
     await page.goto(pageUrl, { waitUntil: 'domcontentloaded' });
     await page.waitForLoadState('networkidle').catch(() => undefined);
 
@@ -111,36 +129,36 @@ async function scrapeSessions(page: Page, options: PSTimetrackerOptions): Promis
         continue;
       }
 
-      const title = collapseSpaces(await cells.nth(1).innerText().catch(() => ''));
-      const durationCell = cells.nth(3);
-      const durationText = collapseSpaces(await durationCell.innerText().catch(() => ''));
-      const durationSort = (await durationCell.getAttribute('data-sort').catch(() => null))?.trim() ?? '';
-      const startText = collapseSpaces(await cells.nth(4).innerText().catch(() => ''));
-      const startDate = parseDateCandidates(startText, referenceDate);
-      const durationFromSort = /^\d+$/.test(durationSort) ? Math.round(Number(durationSort) / 60) : null;
-      const duration = durationFromSort ?? parseDuration(durationText);
+      const rowCells: RawRowCells = {
+        title: collapseSpaces(await cells.nth(1).innerText().catch(() => '')),
+        durationText: collapseSpaces(await cells.nth(3).innerText().catch(() => '')),
+        durationSort: (await cells.nth(3).getAttribute('data-sort').catch(() => null))?.trim() ?? '',
+        startText: collapseSpaces(await cells.nth(4).innerText().catch(() => '')),
+      };
 
       if (debug) {
+        const startDate = parseDateCandidates(rowCells.startText, referenceDate);
         const iso = startDate ? startDate.toISOString() : 'invalid-date';
-        console.log(`Row ${rowIndex + 1}: title="${title}" durationText="${durationText}" durationSort="${durationSort}" start="${startText}" parsedStart=${iso} parsedMinutes=${duration ?? 'invalid'}`);
+        const durationFromSort = /^\d+$/.test(rowCells.durationSort) ? Math.round(Number(rowCells.durationSort) / 60) : null;
+        const duration = durationFromSort ?? parseDuration(rowCells.durationText);
+        console.log(`Row ${rowIndex + 1}: title="${rowCells.title}" durationText="${rowCells.durationText}" durationSort="${rowCells.durationSort}" start="${rowCells.startText}" parsedStart=${iso} parsedMinutes=${duration ?? 'invalid'}`);
       }
 
-      if (!title || !duration || !startDate) {
-        continue;
-      }
+      const session = parseSessionRow(rowCells, referenceDate);
+      if (!session || !session.startedAt) continue;
 
-      if (startDate >= dayEnd) {
+      if (session.startedAt >= dayEnd) {
         // Ignore rows after the target day.
         continue;
       }
 
-      if (startDate < dayStart) {
+      if (session.startedAt < dayStart) {
         // Table is sorted by newest first; a full page older than dayStart means we can stop paginating.
         continue;
       }
 
       sawRowOnOrAfterDayStart = true;
-      sessions.push({ title, minutes: duration, startedAt: startDate });
+      sessions.push(session);
     }
 
     if (!sawRowOnOrAfterDayStart) {
@@ -151,4 +169,5 @@ async function scrapeSessions(page: Page, options: PSTimetrackerOptions): Promis
   return aggregateSessions(sessions);
 }
 
-export { loginIfNeeded, scrapeSessions };
+export type { RawRowCells };
+export { loginIfNeeded, parseSessionRow, scrapeSessions };

@@ -189,65 +189,6 @@ async function hasBackloggdSession(page: Page): Promise<boolean> {
   return addGameVisible;
 }
 
-async function ensureBackloggdSession(page: Page): Promise<void> {
-  await page.goto(backloggdUrl('/login/'), { waitUntil: 'domcontentloaded' });
-  await page.waitForLoadState('networkidle').catch(() => undefined);
-  const loginSurface = await waitForBackloggdAuthSurface(page);
-  updateBackloggdOriginFromUrl(page.url());
-
-  const loggedIn = loginSurface === 'session' || (await hasBackloggdSession(page));
-  if (loggedIn) {
-    await page.goto(backloggdUrl('/u/henriquetavares/playing/'), { waitUntil: 'domcontentloaded' });
-    await page.waitForLoadState('networkidle').catch(() => undefined);
-    await waitForBackloggdReady(page).catch(() => undefined);
-    updateBackloggdOriginFromUrl(page.url());
-
-    const stillAuthenticated = await hasBackloggdSession(page);
-    if (!stillAuthenticated) {
-      throw new Error('Backloggd session was expected but not confirmed on playing page.');
-    }
-    return;
-  }
-
-  const email = requireEnv('BACKLOGGD_EMAIL');
-  const password = requireEnv('BACKLOGGD_PWD');
-
-  const emailInput = page.locator('#user_login, input[name="user[login]"]').first();
-  const passwordInput = page.locator('#user_password, input[name="user[password]"]').first();
-  const rememberMeInput = page.locator('#user_remember_me, input[name="user[remember_me]"]').first();
-  const loginButton = page.locator('#log-in-btn, button[name="commit"]').first();
-
-  await emailInput.waitFor({ state: 'visible', timeout: 15_000 });
-  await emailInput.fill(email);
-  await passwordInput.fill(password);
-  if (await rememberMeInput.count()) {
-    await rememberMeInput.check({ force: true }).catch(() => undefined);
-  }
-
-  await loginButton.waitFor({ state: 'visible', timeout: 15_000 });
-  await loginButton.click({ force: true });
-  await page.waitForLoadState('networkidle').catch(() => undefined);
-  await waitForBackloggdAuthSurface(page);
-
-  await page.goto(backloggdUrl('/u/henriquetavares/playing/'), { waitUntil: 'domcontentloaded' });
-  await page.waitForLoadState('networkidle').catch(() => undefined);
-  await waitForBackloggdReady(page).catch(() => undefined);
-  updateBackloggdOriginFromUrl(page.url());
-
-  const bouncedToLogin = /\/login\/?$/i.test(new URL(page.url()).pathname);
-  const playingGridVisible = await page.locator('#game-lists').first().isVisible().catch(() => false);
-  const sessionActive = await hasBackloggdSession(page);
-
-  if (bouncedToLogin || (!playingGridVisible && !sessionActive)) {
-    const currentTitle = await page.title().catch(() => 'unknown');
-    throw new Error(
-      `Backloggd login did not activate a usable session. url=${page.url()} title=${currentTitle} bouncedToLogin=${String(
-        bouncedToLogin
-      )} playingGridVisible=${String(playingGridVisible)} sessionActive=${String(sessionActive)}`
-    );
-  }
-}
-
 async function loginBackloggdFromGame(page: Page, returnUrl: string): Promise<void> {
   const email = requireEnv('BACKLOGGD_EMAIL');
   const password = requireEnv('BACKLOGGD_PWD');
