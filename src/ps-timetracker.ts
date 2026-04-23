@@ -1,5 +1,12 @@
 import type { Page } from 'playwright';
-import { aggregateSessions, collapseSpaces, parseDateCandidates, parseDuration, type GamePlaytime, type RawSession } from './domain.js';
+import {
+  aggregateSessions,
+  collapseSpaces,
+  parseDateCandidates,
+  parseDuration,
+  type GamePlaytime,
+  type RawSession,
+} from './domain.js';
 
 type RawRowCells = {
   title: string;
@@ -9,7 +16,9 @@ type RawRowCells = {
 };
 
 function parseSessionRow(cells: RawRowCells, referenceDate: Date): RawSession | null {
-  const durationFromSort = /^\d+$/.test(cells.durationSort) ? Math.round(Number(cells.durationSort) / 60) : null;
+  const durationFromSort = /^\d+$/.test(cells.durationSort)
+    ? Math.round(Number(cells.durationSort) / 60)
+    : null;
   const duration = durationFromSort ?? parseDuration(cells.durationText);
   const startDate = parseDateCandidates(cells.startText, referenceDate);
 
@@ -44,7 +53,10 @@ async function loginIfNeeded(page: Page): Promise<void> {
     return;
   }
 
-  const loginVisible = await page.getByText(/you need to login/i).isVisible().catch(() => false);
+  const loginVisible = await page
+    .getByText(/you need to login/i)
+    .isVisible()
+    .catch(() => false);
   const loginForm = page
     .locator('form')
     .filter({ has: page.getByRole('button', { name: /login/i }) })
@@ -85,16 +97,25 @@ async function loginIfNeeded(page: Page): Promise<void> {
   await page.goto(playtimesUrl, { waitUntil: 'domcontentloaded' });
   await page.waitForLoadState('networkidle').catch(() => undefined);
 
-  const stillBlocked = await page.getByText(/you need to login/i).isVisible().catch(() => false);
+  const stillBlocked = await page
+    .getByText(/you need to login/i)
+    .isVisible()
+    .catch(() => false);
   if (stillBlocked) {
-    throw new Error('PS-Timetracker login did not succeed. Verify PS_TIMETRACKER_CODE and account access.');
+    throw new Error(
+      'PS-Timetracker login did not succeed. Verify PS_TIMETRACKER_CODE and account access.'
+    );
   }
 }
 
 async function scrapeSessions(page: Page, options: PSTimetrackerOptions): Promise<GamePlaytime[]> {
   const { playtimesUrl } = getPsnConfig();
   const { referenceDate, debug = false } = options;
-  const dayStart = new Date(referenceDate.getFullYear(), referenceDate.getMonth(), referenceDate.getDate());
+  const dayStart = new Date(
+    referenceDate.getFullYear(),
+    referenceDate.getMonth(),
+    referenceDate.getDate()
+  );
   const dayEnd = new Date(dayStart);
   dayEnd.setDate(dayEnd.getDate() + 1);
   const sessions: RawSession[] = [];
@@ -130,18 +151,43 @@ async function scrapeSessions(page: Page, options: PSTimetrackerOptions): Promis
       }
 
       const rowCells: RawRowCells = {
-        title: collapseSpaces(await cells.nth(1).innerText().catch(() => '')),
-        durationText: collapseSpaces(await cells.nth(3).innerText().catch(() => '')),
-        durationSort: (await cells.nth(3).getAttribute('data-sort').catch(() => null))?.trim() ?? '',
-        startText: collapseSpaces(await cells.nth(4).innerText().catch(() => '')),
+        title: collapseSpaces(
+          await cells
+            .nth(1)
+            .innerText()
+            .catch(() => '')
+        ),
+        durationText: collapseSpaces(
+          await cells
+            .nth(3)
+            .innerText()
+            .catch(() => '')
+        ),
+        durationSort:
+          (
+            await cells
+              .nth(3)
+              .getAttribute('data-sort')
+              .catch(() => null)
+          )?.trim() ?? '',
+        startText: collapseSpaces(
+          await cells
+            .nth(4)
+            .innerText()
+            .catch(() => '')
+        ),
       };
 
       if (debug) {
         const startDate = parseDateCandidates(rowCells.startText, referenceDate);
         const iso = startDate ? startDate.toISOString() : 'invalid-date';
-        const durationFromSort = /^\d+$/.test(rowCells.durationSort) ? Math.round(Number(rowCells.durationSort) / 60) : null;
+        const durationFromSort = /^\d+$/.test(rowCells.durationSort)
+          ? Math.round(Number(rowCells.durationSort) / 60)
+          : null;
         const duration = durationFromSort ?? parseDuration(rowCells.durationText);
-        console.log(`Row ${rowIndex + 1}: title="${rowCells.title}" durationText="${rowCells.durationText}" durationSort="${rowCells.durationSort}" start="${rowCells.startText}" parsedStart=${iso} parsedMinutes=${duration ?? 'invalid'}`);
+        console.log(
+          `Row ${rowIndex + 1}: title="${rowCells.title}" durationText="${rowCells.durationText}" durationSort="${rowCells.durationSort}" start="${rowCells.startText}" parsedStart=${iso} parsedMinutes=${duration ?? 'invalid'}`
+        );
       }
 
       const session = parseSessionRow(rowCells, referenceDate);
