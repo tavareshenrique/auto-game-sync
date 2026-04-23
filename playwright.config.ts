@@ -6,6 +6,6 @@ export default defineConfig({
   testDir: 'tests',
   use: {
     headless,
-    trace: 'retain-on-failure'
-  }
+    trace: 'retain-on-failure',
+  },
 });

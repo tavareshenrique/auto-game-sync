@@ -22,10 +22,10 @@ jobs:
           cache: pnpm # O cache agora aponta para o pnpm
 
       - run: pnpm install
-      
+
       # O playwright ainda pode ser chamado via npx ou pnpm dlx
       - run: pnpm exec playwright install --with-deps chromium
-      
+
       - run: pnpm run sync:headless
         env:
           TZ: America/Sao_Paulo
