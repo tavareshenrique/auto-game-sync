@@ -6,6 +6,7 @@
   "scripts": {
     "sync": "tsx src/sync-playtimes.ts",
     "sync:headless": "HEADLESS=true tsx src/sync-playtimes.ts",
+    "test": "playwright test",
     "typecheck": "tsc --noEmit",
     "postinstall": "playwright install chromium",
     "playwright:install": "playwright install chromium"
