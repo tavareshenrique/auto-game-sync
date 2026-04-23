@@ -2,7 +2,7 @@ import 'dotenv/config';
 import { mkdir, access, writeFile } from 'node:fs/promises';
 import { chromium, type Page, type BrowserContext, type Locator } from 'playwright';
 import { collapseSpaces, durationToMinutes, getReferenceDate, normalizeText, toDisplayDuration, type GamePlaytime } from './domain.js';
-import { loginIfNeeded, scrapeTodaySessions } from './ps-timetracker.js';
+import { loginIfNeeded, scrapeSessions } from './ps-timetracker.js';
 
 const BACKLOGGD_DEFAULT_ORIGIN = 'https://backloggd.com';
 let BACKLOGGD_ACTIVE_ORIGIN = BACKLOGGD_DEFAULT_ORIGIN;
@@ -637,7 +637,7 @@ async function main(): Promise<void> {
   try {
     console.log('Scraping PS-Timetracker playtimes...');
     await loginIfNeeded(page);
-    const games = await scrapeTodaySessions(page, { referenceDate: REFERENCE_DATE, debug: DEBUG_SYNC });
+    const games = await scrapeSessions(page, { referenceDate: REFERENCE_DATE, debug: DEBUG_SYNC });
     console.log(`Found ${games.length} aggregated game(s): ${games.map((game) => `${game.title} (${game.hours}h ${game.minutes}m)`).join(', ') || 'none'}`);
     await writeSyncSummary(games);
 

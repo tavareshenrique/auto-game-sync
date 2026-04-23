@@ -74,7 +74,7 @@ async function loginIfNeeded(page: Page): Promise<void> {
   }
 }
 
-async function scrapeTodaySessions(page: Page, options: PSTimetrackerOptions): Promise<GamePlaytime[]> {
+async function scrapeSessions(page: Page, options: PSTimetrackerOptions): Promise<GamePlaytime[]> {
   const { referenceDate, debug = false } = options;
   const dayStart = new Date(referenceDate.getFullYear(), referenceDate.getMonth(), referenceDate.getDate());
   const dayEnd = new Date(dayStart);
@@ -151,4 +151,4 @@ async function scrapeTodaySessions(page: Page, options: PSTimetrackerOptions): P
   return aggregateSessions(sessions);
 }
 
-export { loginIfNeeded, scrapeTodaySessions };
+export { loginIfNeeded, scrapeSessions };
