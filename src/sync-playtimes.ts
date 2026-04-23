@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { mkdir, access } from 'node:fs/promises';
+import { mkdir, access, writeFile } from 'node:fs/promises';
 import { chromium, type Page, type BrowserContext, type Locator } from 'playwright';
 import { collapseSpaces, durationToMinutes, getReferenceDate, normalizeText, toDisplayDuration, type GamePlaytime } from './domain.js';
 import { loginIfNeeded, scrapeTodaySessions } from './ps-timetracker.js';
@@ -7,6 +7,7 @@ import { loginIfNeeded, scrapeTodaySessions } from './ps-timetracker.js';
 const BACKLOGGD_DEFAULT_ORIGIN = 'https://backloggd.com';
 let BACKLOGGD_ACTIVE_ORIGIN = BACKLOGGD_DEFAULT_ORIGIN;
 const BACKLOGGD_STORAGE_STATE_PATH = process.env.BACKLOGGD_STORAGE_STATE_PATH;
+const SYNC_SUMMARY_PATH = process.env.SYNC_SUMMARY_PATH ?? 'storage/sync-summary.json';
 const HEADLESS = process.env.HEADLESS !== 'false';
 const REFERENCE_DATE = getReferenceDate();
 const DEBUG_SYNC = process.env.SYNC_DEBUG === 'true';
@@ -48,6 +49,57 @@ function updateBackloggdOriginFromUrl(url: string): void {
 
 function backloggdUrl(path: string): string {
   return new URL(path, `${BACKLOGGD_ACTIVE_ORIGIN}/`).toString();
+}
+
+type SyncSummaryGame = {
+  title: string;
+  playedTime: string;
+  registeredDay: string;
+};
+
+type SyncSummary = {
+  generatedAt: string;
+  referenceDate: string;
+  totalGames: number;
+  games: SyncSummaryGame[];
+};
+
+function toDdMmYyyy(date: Date): string {
+  const day = String(date.getDate()).padStart(2, '0');
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const year = String(date.getFullYear());
+  return `${day}/${month}/${year}`;
+}
+
+function parentDir(path: string): string {
+  const lastSlash = path.lastIndexOf('/');
+  if (lastSlash < 0) {
+    return '.';
+  }
+
+  const dir = path.slice(0, lastSlash);
+  return dir || '.';
+}
+
+async function writeSyncSummary(games: GamePlaytime[]): Promise<void> {
+  const registeredDay = toDdMmYyyy(REFERENCE_DATE);
+  const summary: SyncSummary = {
+    generatedAt: new Date().toISOString(),
+    referenceDate: REFERENCE_DATE.toISOString().slice(0, 10),
+    totalGames: games.length,
+    games: games.map((game) => ({
+      title: game.title,
+      playedTime: toDisplayDuration(durationToMinutes(game.hours, game.minutes)),
+      registeredDay
+    }))
+  };
+
+  await mkdir(parentDir(SYNC_SUMMARY_PATH), { recursive: true }).catch(() => undefined);
+  await writeFile(SYNC_SUMMARY_PATH, `${JSON.stringify(summary, null, 2)}\n`, 'utf8');
+
+  if (DEBUG_SYNC) {
+    console.log(`Saved sync summary at ${SYNC_SUMMARY_PATH}`);
+  }
 }
 
 async function fileExists(path: string): Promise<boolean> {
@@ -587,6 +639,7 @@ async function main(): Promise<void> {
     await loginIfNeeded(page);
     const games = await scrapeTodaySessions(page, { referenceDate: REFERENCE_DATE, debug: DEBUG_SYNC });
     console.log(`Found ${games.length} aggregated game(s): ${games.map((game) => `${game.title} (${game.hours}h ${game.minutes}m)`).join(', ') || 'none'}`);
+    await writeSyncSummary(games);
 
     if (games.length === 0) {
       console.log('No sessions found for today. Nothing to sync.');
