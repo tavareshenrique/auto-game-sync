@@ -1,0 +1,33 @@
+name: Update LICENSE Year
+
+on:
+  schedule:
+    - cron: '0 0 1 1 *' # At 00:00 on January 1st (UTC)
+  workflow_dispatch:
+
+jobs:
+  update-license:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Update LICENSE year
+        run: node ./scripts/update-license-year.js
+
+      - name: Commit and push if changed
+        run: |
+          if [ -n "$(git status --porcelain)" ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add LICENSE
+            git commit -m "chore: update LICENSE year"
+            git push
+          else
+            echo "No changes to commit"
+          fi

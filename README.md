@@ -224,4 +224,4 @@ Se o terminal receber `Ctrl+C`, o Node encerra com código `130` (comportamento 
 
 ## Licença
 
-Projeto privado.
+Este projeto está licenciado sob a Licença MIT. Veja o arquivo [LICENSE](LICENSE) para os termos completos.
