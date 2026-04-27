@@ -11,8 +11,9 @@
     "lint": "eslint src tests",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "postinstall": "playwright install chromium",
-    "playwright:install": "playwright install chromium"
+    "postinstall": "playwright install chromium && node ./scripts/update-license-year.js",
+    "playwright:install": "playwright install chromium",
+    "update-license-year": "node ./scripts/update-license-year.js"
   },
   "dependencies": {
     "dotenv": "^16.6.1",
