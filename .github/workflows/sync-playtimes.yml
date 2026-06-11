@@ -73,10 +73,13 @@ jobs:
 
           const body = lines.join('\n').trimEnd();
           appendFileSync(process.env.GITHUB_OUTPUT, `body<<EOF\n${body}\nEOF\n`);
+
+          const shouldSend = games.length > 0 ? 'true' : 'false';
+          appendFileSync(process.env.GITHUB_OUTPUT, `should_send=${shouldSend}\n`);
           EOF
 
       - name: Send success email
-        if: success()
+        if: success() && steps.build-email-body.outputs.should_send == 'true'
         uses: dawidd6/action-send-mail@v3
         with:
           server_address: ${{ secrets.SMTP_HOST }}
