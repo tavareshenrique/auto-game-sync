@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on Keep a Changelog,
 and this project follows Semantic Versioning.
 
+## [1.0.2] - 2026-06-11
+
+### Changed
+
+- Updated the `Sync Playtimes` GitHub Actions workflow to only send a success email when one or more games have actually been synchronized.
+
 ## [1.0.1] - 2026-04-23
 
 ### Added
