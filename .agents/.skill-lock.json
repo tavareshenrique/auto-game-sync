@@ -1,0 +1,15 @@
+{
+  "version": 2,
+  "skills": {
+    "playwright-skill": {
+      "name": "playwright-skill",
+      "source": "local",
+      "contentHash": "9c45020d33af9ac2d44c89721f154c94bd73b9d8590117597b9a26920ff9cecc",
+      "installedAt": "2026-06-22T09:12:16.882Z",
+      "updatedAt": "2026-06-22T09:12:16.895Z",
+      "agents": ["cursor", "claude-code", "windsurf"],
+      "method": "copy",
+      "global": false
+    }
+  }
+}
