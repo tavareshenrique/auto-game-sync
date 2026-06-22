@@ -4,9 +4,12 @@ import { chromium, type Page, type BrowserContext, type Locator } from 'playwrig
 import {
   collapseSpaces,
   durationToMinutes,
+  getMonthIndex,
+  getMonthName,
   getReferenceDate,
   normalizeText,
   toDisplayDuration,
+  toLocalIsoDate,
   type GamePlaytime,
 } from './domain.js';
 import { loginIfNeeded, scrapeSessions } from './ps-timetracker.js';
@@ -96,7 +99,7 @@ async function writeSyncSummary(games: GamePlaytime[]): Promise<void> {
   const registeredDay = toDdMmYyyy(REFERENCE_DATE);
   const summary: SyncSummary = {
     generatedAt: new Date().toISOString(),
-    referenceDate: REFERENCE_DATE.toISOString().slice(0, 10),
+    referenceDate: toLocalIsoDate(REFERENCE_DATE),
     totalGames: games.length,
     games: games.map((game) => ({
       title: game.title,
@@ -331,64 +334,185 @@ async function findPlayingGameCard(page: Page, title: string) {
   return null;
 }
 
-function getMonthIndex(monthName: string): number {
-  const names = [
-    'january',
-    'february',
-    'march',
-    'april',
-    'may',
-    'june',
-    'july',
-    'august',
-    'september',
-    'october',
-    'november',
-    'december',
-  ];
+function getJournalCalendarControls(page: Page): Locator {
+  return page.locator('#log-editor-full').first();
+}
 
-  return names.indexOf(monthName.toLowerCase());
+function getPlaythroughCalendarGrid(page: Page): Locator {
+  return page.locator('#playthrough-calendar').first();
+}
+
+async function readCalendarMonthYear(
+  controls: Locator
+): Promise<{ monthText: string; yearText: string }> {
+  const monthFromButton = collapseSpaces(
+    (await controls
+      .locator('button[data-id="month-selector"] .filter-option-inner-inner')
+      .first()
+      .innerText()
+      .catch(() => '')) ||
+      (await controls
+        .locator('button[data-id="month-selector"]')
+        .first()
+        .getAttribute('title')
+        .catch(() => '')) ||
+      ''
+  );
+  const yearFromButton = collapseSpaces(
+    (await controls
+      .locator('button[data-id="year-selector"] .filter-option-inner-inner')
+      .first()
+      .innerText()
+      .catch(() => '')) ||
+      (await controls
+        .locator('button[data-id="year-selector"]')
+        .first()
+        .getAttribute('title')
+        .catch(() => '')) ||
+      ''
+  );
+
+  if (monthFromButton && yearFromButton) {
+    return { monthText: monthFromButton, yearText: yearFromButton };
+  }
+
+  const monthFromSelect = collapseSpaces(
+    (await controls
+      .locator('select#month-selector option:checked')
+      .first()
+      .textContent()
+      .catch(() => '')) ?? ''
+  );
+  const yearFromSelect = collapseSpaces(
+    (await controls
+      .locator('select#year-selector option:checked')
+      .first()
+      .textContent()
+      .catch(() => '')) ?? ''
+  );
+
+  return { monthText: monthFromSelect, yearText: yearFromSelect };
+}
+
+async function refreshBootstrapSelect(
+  page: Page,
+  selectId: 'month-selector' | 'year-selector'
+): Promise<void> {
+  await page
+    .evaluate((id) => {
+      const select = document.querySelector(
+        `#log-editor-full select#${id}`
+      ) as HTMLSelectElement | null;
+      if (!select) {
+        return;
+      }
+
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+
+      const jQuery = (
+        window as {
+          jQuery?: (element: Element) => {
+            selectpicker: (method: string, value?: string) => void;
+            trigger: (event: string) => void;
+          };
+        }
+      ).jQuery;
+      if (!jQuery) {
+        return;
+      }
+
+      jQuery(select).selectpicker('val', select.value);
+      jQuery(select).trigger('change');
+    }, selectId)
+    .catch(() => undefined);
+}
+
+async function setCalendarViaSelects(
+  page: Page,
+  controls: Locator,
+  targetMonth: number,
+  targetMonthName: string,
+  targetYear: number
+): Promise<boolean> {
+  const monthSelect = controls.locator('select#month-selector').first();
+  const yearSelect = controls.locator('select#year-selector').first();
+
+  if ((await monthSelect.count()) === 0 || (await yearSelect.count()) === 0) {
+    return false;
+  }
+
+  await monthSelect.selectOption(String(targetMonth)).catch(async () => {
+    await monthSelect.selectOption({ label: targetMonthName });
+  });
+  await refreshBootstrapSelect(page, 'month-selector');
+
+  await yearSelect.selectOption({ label: String(targetYear) }).catch(async () => {
+    await yearSelect.selectOption(String(targetYear));
+  });
+  await refreshBootstrapSelect(page, 'year-selector');
+
+  return true;
+}
+
+async function waitForCalendarMonthYear(
+  controls: Locator,
+  page: Page,
+  targetMonth: number,
+  targetYear: number,
+  timeoutMs = 5_000
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+
+  while (Date.now() < deadline) {
+    const { monthText, yearText } = await readCalendarMonthYear(controls);
+    const shownMonth = getMonthIndex(monthText);
+    const shownYear = Number.parseInt(yearText, 10);
+
+    if (shownMonth === targetMonth && shownYear === targetYear) {
+      return;
+    }
+
+    await page.waitForTimeout(100);
+  }
+
+  const { monthText, yearText } = await readCalendarMonthYear(controls);
+  throw new Error(
+    `Could not align Backloggd calendar to ${getMonthName(targetMonth)}/${targetYear}. ` +
+      `Last read: month="${monthText}", year="${yearText}".`
+  );
 }
 
 async function alignCalendarToReferenceDate(page: Page): Promise<void> {
   const targetYear = REFERENCE_DATE.getFullYear();
   const targetMonth = REFERENCE_DATE.getMonth();
+  const targetMonthName = getMonthName(targetMonth);
+
+  const controls = getJournalCalendarControls(page);
+  const calendarGrid = getPlaythroughCalendarGrid(page);
+  await calendarGrid.waitFor({ state: 'visible', timeout: 15_000 });
+
+  const alignedViaSelect = await setCalendarViaSelects(
+    page,
+    controls,
+    targetMonth,
+    targetMonthName,
+    targetYear
+  );
+  if (alignedViaSelect) {
+    if (DEBUG_SYNC) {
+      console.log(`Set calendar selects → ${targetMonthName}/${targetYear}`);
+    }
+    await waitForCalendarMonthYear(controls, page, targetMonth, targetYear);
+    return;
+  }
+
+  let lastMonthText = '';
+  let lastYearText = '';
 
   for (let attempts = 0; attempts < 24; attempts += 1) {
-    const monthText = collapseSpaces(
-      (await page
-        .locator(
-          '#playthrough-calendar button[data-id="month-selector"] .filter-option-inner-inner, button[data-id="month-selector"] .filter-option-inner-inner'
-        )
-        .first()
-        .innerText()
-        .catch(() => '')) ||
-        (await page
-          .locator(
-            '#playthrough-calendar button[data-id="month-selector"], button[data-id="month-selector"]'
-          )
-          .first()
-          .getAttribute('title')
-          .catch(() => '')) ||
-        ''
-    );
-    const yearText = collapseSpaces(
-      (await page
-        .locator(
-          '#playthrough-calendar button[data-id="year-selector"] .filter-option-inner-inner, button[data-id="year-selector"] .filter-option-inner-inner'
-        )
-        .first()
-        .innerText()
-        .catch(() => '')) ||
-        (await page
-          .locator(
-            '#playthrough-calendar button[data-id="year-selector"], button[data-id="year-selector"]'
-          )
-          .first()
-          .getAttribute('title')
-          .catch(() => '')) ||
-        ''
-    );
+    const { monthText, yearText } = await readCalendarMonthYear(controls);
+    lastMonthText = monthText;
+    lastYearText = yearText;
 
     const shownMonth = getMonthIndex(monthText);
     const shownYear = Number.parseInt(yearText, 10);
@@ -405,14 +529,44 @@ async function alignCalendarToReferenceDate(page: Page): Promise<void> {
 
     const shouldGoNext =
       shownYear < targetYear || (shownYear === targetYear && shownMonth < targetMonth);
-    await page
+
+    if (DEBUG_SYNC) {
+      const direction = shouldGoNext ? 'next' : 'prev';
+      console.log(
+        `Calendar at ${monthText}/${yearText}, clicking ${direction} → target ${targetMonthName}/${targetYear}`
+      );
+    }
+
+    const previousMonth = shownMonth;
+    const previousYear = shownYear;
+
+    await controls
       .locator(shouldGoNext ? '#month-next' : '#month-prev')
       .first()
       .click({ force: true });
-    await page.waitForTimeout(250);
+
+    const deadline = Date.now() + 5_000;
+    let changed = false;
+    while (Date.now() < deadline) {
+      await page.waitForTimeout(100);
+      const { monthText: newMonthText, yearText: newYearText } =
+        await readCalendarMonthYear(controls);
+      const newMonth = getMonthIndex(newMonthText);
+      const newYear = Number.parseInt(newYearText, 10);
+      if (newMonth !== previousMonth || newYear !== previousYear) {
+        changed = true;
+        break;
+      }
+    }
+
+    if (!changed && DEBUG_SYNC) {
+      console.log('Calendar month/year did not change after navigation click');
+    }
   }
 
-  throw new Error('Could not align Backloggd calendar to target month/year.');
+  throw new Error(
+    `Could not align Backloggd calendar to target month/year. Last read: month="${lastMonthText}", year="${lastYearText}".`
+  );
 }
 
 async function ensureJournalCalendarVisible(page: Page): Promise<void> {
@@ -570,73 +724,250 @@ async function openGameLogEditor(page: Page, title: string): Promise<void> {
   await fullEditor.waitFor({ state: 'visible', timeout: 20_000 });
 }
 
+function getPlayDateModal(page: Page): Locator {
+  return page
+    .locator(
+      '#playthrough-modal-content, #playthrough-modal.show, #playthrough-modal .modal__content, .modal.show:has(#play_date_hours)'
+    )
+    .first();
+}
+
+async function isPlayDateModalOpen(page: Page): Promise<boolean> {
+  if (
+    await getPlayDateModal(page)
+      .isVisible()
+      .catch(() => false)
+  ) {
+    return true;
+  }
+
+  return page
+    .locator('#play_date_hours')
+    .isVisible()
+    .catch(() => false);
+}
+
+async function waitForPlayDateModalOpen(page: Page, timeoutMs = 3_000): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+
+  while (Date.now() < deadline) {
+    if (await isPlayDateModalOpen(page)) {
+      return true;
+    }
+
+    await page.waitForTimeout(100);
+  }
+
+  return false;
+}
+
+async function dismissOpenBootstrapDropdown(page: Page): Promise<void> {
+  await page.keyboard.press('Escape').catch(() => undefined);
+  await page.waitForTimeout(100);
+}
+
+async function tryLegacyFc3DayEventClick(page: Page, targetIsoDate: string): Promise<boolean> {
+  return page
+    .evaluate((isoDate) => {
+      const dayTop = document.querySelector(
+        `#playthrough-calendar td.fc-day-top[data-date="${isoDate}"]`
+      );
+      if (!dayTop) {
+        return false;
+      }
+
+      const topRow = dayTop.parentElement;
+      if (!topRow) {
+        return false;
+      }
+
+      const dayIndex = Array.from(topRow.children).indexOf(dayTop);
+      if (dayIndex < 0) {
+        return false;
+      }
+
+      const weekRow = topRow.closest('.fc-content-skeleton')?.parentElement;
+      const eventsRow = weekRow?.querySelector('.fc-content-skeleton tbody tr');
+      const eventCell = eventsRow?.children.item(dayIndex) as HTMLElement | null;
+      const eventLink = eventCell?.querySelector(
+        'a.fc-day-grid-event, a.fc-daygrid-event'
+      ) as HTMLElement | null;
+
+      if (!eventCell) {
+        return false;
+      }
+
+      eventCell.click();
+      eventLink?.click();
+      return true;
+    }, targetIsoDate)
+    .catch(() => false);
+}
+
+type PlayDateModalOpenStrategy = {
+  id: string;
+  debugLabel: string;
+  run: (dayCell: Locator) => Promise<boolean>;
+};
+
+async function openPlayDateModal(page: Page, targetIsoDate: string): Promise<void> {
+  const calendar = getPlaythroughCalendarGrid(page);
+  const dayCell = calendar
+    .locator(
+      `td.fc-daygrid-day[data-date="${targetIsoDate}"], td.fc-day[data-date="${targetIsoDate}"]`
+    )
+    .first();
+
+  try {
+    await dayCell.waitFor({ state: 'visible', timeout: 15_000 });
+  } catch {
+    throw new Error(`Target day ${targetIsoDate} not visible after calendar alignment`);
+  }
+
+  await dismissOpenBootstrapDropdown(page);
+
+  const triedStrategies: string[] = [];
+
+  const strategies: PlayDateModalOpenStrategy[] = [
+    {
+      id: 'existing-event-click',
+      debugLabel: `click existing event for ${targetIsoDate}`,
+      run: async (cell) => {
+        const eventLink = cell.locator('a.fc-daygrid-event, a.fc-event').first();
+        if ((await eventLink.count()) === 0) {
+          return false;
+        }
+
+        await eventLink.click({ force: true });
+        return true;
+      },
+    },
+    {
+      id: 'events-area-click',
+      debugLabel: `click .fc-daygrid-day-events for ${targetIsoDate}`,
+      run: async (cell) => {
+        const eventsArea = cell.locator('.fc-daygrid-day-events').first();
+        if ((await eventsArea.count()) === 0) {
+          return false;
+        }
+
+        await eventsArea.click({ force: true });
+        return true;
+      },
+    },
+    {
+      id: 'day-frame-dblclick',
+      debugLabel: `dblclick .fc-daygrid-day-frame for ${targetIsoDate}`,
+      run: async (cell) => {
+        const dayFrame = cell.locator('.fc-daygrid-day-frame').first();
+        if ((await dayFrame.count()) === 0) {
+          return false;
+        }
+
+        await dayFrame.dblclick({ force: true });
+        return true;
+      },
+    },
+    {
+      id: 'day-number-click',
+      debugLabel: `click .fc-daygrid-day-number for ${targetIsoDate}`,
+      run: async (cell) => {
+        const dayNumber = cell.locator('a.fc-daygrid-day-number').first();
+        if ((await dayNumber.count()) === 0) {
+          return false;
+        }
+
+        await dayNumber.click({ force: true });
+        return true;
+      },
+    },
+  ];
+
+  for (const strategy of strategies) {
+    if (await isPlayDateModalOpen(page)) {
+      if (DEBUG_SYNC) {
+        console.log('Play date modal already open before strategy attempts');
+      }
+      return;
+    }
+
+    triedStrategies.push(strategy.id);
+
+    if (DEBUG_SYNC) {
+      console.log(`Trying openPlayDateModal: ${strategy.debugLabel}`);
+    }
+
+    await dismissOpenBootstrapDropdown(page);
+
+    let attempted = false;
+    try {
+      attempted = await strategy.run(dayCell);
+    } catch (error) {
+      if (DEBUG_SYNC) {
+        console.log(
+          `openPlayDateModal strategy ${strategy.id} failed: ${error instanceof Error ? error.message : String(error)}`
+        );
+      }
+    }
+
+    if (!attempted) {
+      if (DEBUG_SYNC) {
+        console.log(`openPlayDateModal strategy ${strategy.id} skipped (element not found)`);
+      }
+      continue;
+    }
+
+    if (await waitForPlayDateModalOpen(page)) {
+      if (DEBUG_SYNC) {
+        console.log(`Play date modal opened via: ${strategy.id}`);
+      }
+      return;
+    }
+  }
+
+  const legacyId = 'legacy-fc3-content-skeleton';
+  triedStrategies.push(legacyId);
+
+  if (DEBUG_SYNC) {
+    console.log(`Trying openPlayDateModal: legacy FC3 content-skeleton for ${targetIsoDate}`);
+  }
+
+  await dismissOpenBootstrapDropdown(page);
+
+  if (await tryLegacyFc3DayEventClick(page, targetIsoDate)) {
+    if (await waitForPlayDateModalOpen(page)) {
+      if (DEBUG_SYNC) {
+        console.log(`Play date modal opened via: ${legacyId}`);
+      }
+      return;
+    }
+  } else if (DEBUG_SYNC) {
+    console.log(`openPlayDateModal strategy ${legacyId} skipped (no FC3 day cell match)`);
+  }
+
+  throw new Error(
+    `Could not open play date modal for ${targetIsoDate}. ` +
+      `Tried strategies: ${triedStrategies.join(', ')}. ` +
+      'Calendar may be on the wrong month or the day has no clickable entry.'
+  );
+}
+
 async function logPlaySession(page: Page, game: GamePlaytime): Promise<void> {
   await openGameLogEditor(page, game.title);
   await ensureJournalCalendarVisible(page);
 
   await alignCalendarToReferenceDate(page);
 
-  const targetIsoDate = REFERENCE_DATE.toISOString().slice(0, 10);
-  const dayCell = page
-    .locator(`#playthrough-calendar td.fc-day[data-date="${targetIsoDate}"]`)
-    .first();
-  await dayCell.waitFor({ state: 'visible', timeout: 15_000 });
-  await dayCell.click({ force: true });
+  const targetIsoDate = toLocalIsoDate(REFERENCE_DATE);
+  await openPlayDateModal(page, targetIsoDate);
 
-  const playDateModal = page
-    .locator('#playthrough-modal-content, #playthrough-modal .modal__content')
-    .first();
-  let clickedSpecificDayEvent = false;
-  for (let attempt = 0; attempt < 4; attempt += 1) {
-    const clickedDayEvent = await page
-      .evaluate((isoDate) => {
-        const dayTop = document.querySelector(
-          `#playthrough-calendar td.fc-day-top[data-date="${isoDate}"]`
-        );
-        if (!dayTop) {
-          return false;
-        }
-
-        const topRow = dayTop.parentElement;
-        if (!topRow) {
-          return false;
-        }
-
-        const dayIndex = Array.from(topRow.children).indexOf(dayTop);
-        if (dayIndex < 0) {
-          return false;
-        }
-
-        const weekRow = topRow.closest('.fc-content-skeleton')?.parentElement;
-        const eventsRow = weekRow?.querySelector('.fc-content-skeleton tbody tr');
-        const eventCell = eventsRow?.children.item(dayIndex) as HTMLElement | null;
-        const eventLink = eventCell?.querySelector('a.fc-day-grid-event') as HTMLElement | null;
-
-        if (!eventCell || !eventLink) {
-          return false;
-        }
-
-        // Click only the event cell for the selected day/column.
-        eventCell.click();
-        eventLink.click();
-        return true;
-      }, targetIsoDate)
-      .catch(() => false);
-    clickedSpecificDayEvent = clickedSpecificDayEvent || clickedDayEvent;
-
-    const modalVisible = await playDateModal.isVisible().catch(() => false);
-    if (modalVisible) {
-      break;
-    }
-
-    await page.waitForTimeout(250);
+  const playDateModal = getPlayDateModal(page);
+  const modalVisible = await playDateModal.isVisible().catch(() => false);
+  if (!modalVisible) {
+    await page.locator('#play_date_hours').waitFor({ state: 'visible', timeout: 20_000 });
+  } else {
+    await playDateModal.waitFor({ state: 'visible', timeout: 20_000 });
   }
-
-  if (!clickedSpecificDayEvent) {
-    throw new Error(`Could not find the specific day event cell for ${targetIsoDate}.`);
-  }
-
-  await playDateModal.waitFor({ state: 'visible', timeout: 20_000 });
 
   const gameUrl = page.url();
 
