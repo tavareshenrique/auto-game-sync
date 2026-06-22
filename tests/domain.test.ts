@@ -3,12 +3,15 @@ import {
   aggregateSessions,
   collapseSpaces,
   durationToMinutes,
+  getMonthIndex,
+  getMonthName,
   getReferenceDate,
   minutesToDuration,
   normalizeText,
   parseDateCandidates,
   parseDuration,
   toDisplayDuration,
+  toLocalIsoDate,
 } from '../src/domain.js';
 
 // --- normalizeText ---
@@ -244,6 +247,66 @@ test.describe('aggregateSessions', () => {
     const result = aggregateSessions(sessions);
     expect(result[0].hours).toBe(2);
     expect(result[0].minutes).toBe(10);
+  });
+});
+
+// --- toLocalIsoDate ---
+
+test.describe('toLocalIsoDate', () => {
+  test('formats local date components as YYYY-MM-DD', () => {
+    expect(toLocalIsoDate(new Date(2026, 5, 21))).toBe('2026-06-21');
+    expect(toLocalIsoDate(new Date(2024, 0, 5))).toBe('2024-01-05');
+  });
+
+  test('pads month and day with leading zeros', () => {
+    expect(toLocalIsoDate(new Date(2024, 2, 3))).toBe('2024-03-03');
+  });
+
+  test('uses local calendar date components, not UTC slice', () => {
+    const localMidnight = new Date(2026, 5, 21);
+    expect(toLocalIsoDate(localMidnight)).toBe('2026-06-21');
+    expect(toLocalIsoDate(localMidnight)).toBe(
+      `${localMidnight.getFullYear()}-${String(localMidnight.getMonth() + 1).padStart(2, '0')}-${String(localMidnight.getDate()).padStart(2, '0')}`
+    );
+  });
+
+  test('matches getReferenceDate local midnight', () => {
+    delete process.env.SYNC_REFERENCE_DAYS_OFFSET;
+    process.env.SYNC_REFERENCE_DATE = '2026-06-21T12:00:00';
+    const ref = getReferenceDate();
+    expect(toLocalIsoDate(ref)).toBe('2026-06-21');
+    delete process.env.SYNC_REFERENCE_DATE;
+  });
+});
+
+// --- getMonthIndex ---
+
+test.describe('getMonthIndex', () => {
+  test('resolves English month names', () => {
+    expect(getMonthIndex('January')).toBe(0);
+    expect(getMonthIndex('March')).toBe(2);
+    expect(getMonthIndex('June')).toBe(5);
+    expect(getMonthIndex('December')).toBe(11);
+  });
+
+  test('is case-insensitive', () => {
+    expect(getMonthIndex('march')).toBe(2);
+    expect(getMonthIndex('JUNE')).toBe(5);
+  });
+
+  test('returns -1 for unknown month names', () => {
+    expect(getMonthIndex('')).toBe(-1);
+    expect(getMonthIndex('Foo')).toBe(-1);
+  });
+});
+
+// --- getMonthName ---
+
+test.describe('getMonthName', () => {
+  test('returns English month names by index', () => {
+    expect(getMonthName(2)).toBe('March');
+    expect(getMonthName(5)).toBe('June');
+    expect(getMonthName(11)).toBe('December');
   });
 });
 

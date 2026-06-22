@@ -143,6 +143,51 @@ function toDisplayDuration(totalMinutes: number): string {
   return `${hours}h ${minutes}m`;
 }
 
+function toLocalIsoDate(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+function getMonthIndex(monthName: string): number {
+  const names = [
+    'january',
+    'february',
+    'march',
+    'april',
+    'may',
+    'june',
+    'july',
+    'august',
+    'september',
+    'october',
+    'november',
+    'december',
+  ];
+
+  return names.indexOf(monthName.toLowerCase());
+}
+
+function getMonthName(monthIndex: number): string {
+  const names = [
+    'January',
+    'February',
+    'March',
+    'April',
+    'May',
+    'June',
+    'July',
+    'August',
+    'September',
+    'October',
+    'November',
+    'December',
+  ];
+
+  return names[monthIndex] ?? '';
+}
+
 function aggregateSessions(sessions: RawSession[]): GamePlaytime[] {
   const totals = new Map<string, { title: string; minutes: number }>();
 
@@ -171,10 +216,13 @@ export {
   aggregateSessions,
   collapseSpaces,
   durationToMinutes,
+  getMonthIndex,
+  getMonthName,
   getReferenceDate,
   minutesToDuration,
   normalizeText,
   parseDateCandidates,
   parseDuration,
   toDisplayDuration,
+  toLocalIsoDate,
 };
