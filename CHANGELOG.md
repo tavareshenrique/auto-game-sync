@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on Keep a Changelog,
 and this project follows Semantic Versioning.
 
+## [1.0.3] - 2026-06-22
+
+### Fixed
+
+- Backloggd journal sync when the reference date falls in a month not yet shown on the playthrough calendar: align month/year via bootstrap-select (`#month-selector` / `#year-selector`) before selecting the target day.
+- Play date modal failing to open on days without an existing "Played" entry: update FullCalendar v5 selectors to click `.fc-daygrid-day-events` (with ordered fallbacks for event links, day frame, and legacy FC3 layout).
+- Local date handling for calendar day matching via `toLocalIsoDate`, avoiding UTC `toISOString().slice(0, 10)` drift.
+
+### Added
+
+- `openPlayDateModal` and `getPlayDateModal` helpers with `SYNC_DEBUG` logging per click strategy.
+- Domain helpers `toLocalIsoDate`, `getMonthIndex`, and `getMonthName`, with unit tests.
+
 ## [1.0.2] - 2026-06-11
 
 ### Changed
