@@ -394,7 +394,10 @@ async function readCalendarMonthYear(
   return { monthText: monthFromSelect, yearText: yearFromSelect };
 }
 
-async function refreshBootstrapSelect(page: Page, selectId: 'month-selector' | 'year-selector'): Promise<void> {
+async function refreshBootstrapSelect(
+  page: Page,
+  selectId: 'month-selector' | 'year-selector'
+): Promise<void> {
   await page
     .evaluate((id) => {
       const select = document.querySelector(
@@ -730,11 +733,18 @@ function getPlayDateModal(page: Page): Locator {
 }
 
 async function isPlayDateModalOpen(page: Page): Promise<boolean> {
-  if (await getPlayDateModal(page).isVisible().catch(() => false)) {
+  if (
+    await getPlayDateModal(page)
+      .isVisible()
+      .catch(() => false)
+  ) {
     return true;
   }
 
-  return page.locator('#play_date_hours').isVisible().catch(() => false);
+  return page
+    .locator('#play_date_hours')
+    .isVisible()
+    .catch(() => false);
 }
 
 async function waitForPlayDateModalOpen(page: Page, timeoutMs = 3_000): Promise<boolean> {
