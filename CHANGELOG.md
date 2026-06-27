@@ -13,6 +13,8 @@ and this project follows Semantic Versioning.
 - `coverUrl` field in `GamePlaytime` (domain) and `SyncSummaryGame` (sync summary) to persist cover references in `storage/sync-summary.json`.
 - Email generation script (`scripts/generate-email.ts`) that reads `sync-summary.json` and produces a table-based HTML email with inline styles, compatible with Outlook/Gmail, including cover images with gradient placeholder fallback.
 - Plural/singular verb agreement in the email header (`foi registrado` / `foram registrados`).
+- Automatic dismissal of Backloggd privacy consent banner (`dismissBackloggdConsentBanner`) before interacting with the page, checking both the main document and iframes.
+- Troubleshooting section in README for the privacy consent banner and renumbered existing sections.
 
 ### Changed
 
