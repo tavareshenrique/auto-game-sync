@@ -89,9 +89,7 @@ function buildEmailHtml(summary: SyncSummary): string {
   const gamesHtml = summary.games.map(gameCardHtml).join('');
 
   const gameCountText =
-    summary.totalGames === 1
-      ? '1 jogo sincronizado'
-      : `${summary.totalGames} jogos sincronizados`;
+    summary.totalGames === 1 ? '1 jogo sincronizado' : `${summary.totalGames} jogos sincronizados`;
 
   return `<!DOCTYPE html>
 <html lang="pt-BR">
