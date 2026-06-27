@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import { mkdir, access, writeFile } from 'node:fs/promises';
-import { chromium, type Page, type BrowserContext, type Locator } from 'playwright';
+import { chromium, type Page, type Frame, type BrowserContext, type Locator } from 'playwright';
 import {
   collapseSpaces,
   durationToMinutes,
@@ -143,6 +143,7 @@ async function waitForBackloggdReady(page: Page, timeoutMs = 90_000): Promise<vo
       challengeVisible;
 
     if (!onChallengePage) {
+      await dismissBackloggdConsentBanner(page);
       return;
     }
 
@@ -159,6 +160,107 @@ async function waitForBackloggdReady(page: Page, timeoutMs = 90_000): Promise<vo
   throw new Error(
     'Backloggd challenge did not clear in time. Retry later or run once with HEADLESS=false to validate access.'
   );
+}
+
+async function dismissBackloggdConsentBanner(page: Page, timeoutMs = 5_000): Promise<boolean> {
+  const start = Date.now();
+
+  async function isPrivacyBannerVisible(root: Page | Frame): Promise<boolean> {
+    const byHeading = await root
+      .getByRole('heading', { name: /privacidade|privacy/i })
+      .first()
+      .isVisible()
+      .catch(() => false);
+    if (byHeading) {
+      return true;
+    }
+
+    return root
+      .getByText(/privacidade|privacy/i)
+      .first()
+      .isVisible()
+      .catch(() => false);
+  }
+
+  async function tryDismissInRoot(root: Page | Frame): Promise<boolean> {
+    if (!(await isPrivacyBannerVisible(root))) {
+      return false;
+    }
+
+    const candidates = [
+      root.getByRole('button', { name: /concordo/i }).first(),
+      root.getByRole('button', { name: /i agree|accept all|^accept$|^agree$/i }).first(),
+      root.locator('#onetrust-accept-btn-handler').first(),
+      root.locator('[data-testid="uc-accept-all-button"]').first(),
+      root.locator('button:has-text("CONCORDO")').first(),
+      root.locator('button:has-text("AGREE")').first(),
+    ];
+
+    for (const button of candidates) {
+      if (!(await button.isVisible().catch(() => false))) {
+        continue;
+      }
+
+      await button.click({ force: true }).catch(() => undefined);
+      await page.waitForTimeout(400);
+
+      if (!(await isPrivacyBannerVisible(root))) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  async function bannerVisibleAnywhere(): Promise<boolean> {
+    if (await isPrivacyBannerVisible(page)) {
+      return true;
+    }
+
+    for (const frame of page.frames()) {
+      if (frame === page.mainFrame()) {
+        continue;
+      }
+      if (await isPrivacyBannerVisible(frame)) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  try {
+    while (Date.now() - start < timeoutMs) {
+      if (await tryDismissInRoot(page)) {
+        if (DEBUG_SYNC) {
+          console.log('Backloggd privacy consent banner dismissed');
+        }
+        return true;
+      }
+
+      for (const frame of page.frames()) {
+        if (frame === page.mainFrame()) {
+          continue;
+        }
+        if (await tryDismissInRoot(frame)) {
+          if (DEBUG_SYNC) {
+            console.log('Backloggd privacy consent banner dismissed (iframe)');
+          }
+          return true;
+        }
+      }
+
+      if (!(await bannerVisibleAnywhere())) {
+        return false;
+      }
+
+      await page.waitForTimeout(300);
+    }
+  } catch {
+    // Non-fatal: consent dismissal must never break the sync flow.
+  }
+
+  return false;
 }
 
 async function waitForBackloggdAuthSurface(
