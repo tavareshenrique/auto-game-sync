@@ -88,8 +88,11 @@ function gameCardHtml(game: SyncSummaryGame): string {
 function buildEmailHtml(summary: SyncSummary): string {
   const gamesHtml = summary.games.map(gameCardHtml).join('');
 
-  const gameCountText =
-    summary.totalGames === 1 ? '1 jogo sincronizado' : `${summary.totalGames} jogos sincronizados`;
+  const isSingular = summary.totalGames === 1;
+  const gameCountText = isSingular
+    ? '1 jogo sincronizado'
+    : `${summary.totalGames} jogos sincronizados`;
+  const verb = isSingular ? 'foi registrado' : 'foram registrados';
 
   return `<!DOCTYPE html>
 <html lang="pt-BR">
@@ -124,7 +127,7 @@ function buildEmailHtml(summary: SyncSummary): string {
                       Auto Game Sync
                     </h1>
                     <p style="margin: 6px 0 0 0; font-size: 14px; color: #64748b; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; line-height: 1.5;">
-                      ${gameCountText} no dia <strong>${escapeHtml(summary.games[0]?.registeredDay ?? '')}</strong> foram registrados com sucesso no Backloggd.
+                      ${gameCountText} no dia <strong>${escapeHtml(summary.games[0]?.registeredDay ?? '')}</strong> ${verb} com sucesso no Backloggd.
                     </p>
                   </td>
                 </tr>
