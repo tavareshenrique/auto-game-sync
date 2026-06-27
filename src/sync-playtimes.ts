@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import { mkdir, access, writeFile } from 'node:fs/promises';
-import { chromium, type Page, type BrowserContext, type Locator } from 'playwright';
+import { chromium, type Page, type Frame, type BrowserContext, type Locator } from 'playwright';
 import {
   collapseSpaces,
   durationToMinutes,
@@ -69,6 +69,7 @@ type SyncSummaryGame = {
   title: string;
   playedTime: string;
   registeredDay: string;
+  coverUrl?: string;
 };
 
 type SyncSummary = {
@@ -105,6 +106,7 @@ async function writeSyncSummary(games: GamePlaytime[]): Promise<void> {
       title: game.title,
       playedTime: toDisplayDuration(durationToMinutes(game.hours, game.minutes)),
       registeredDay,
+      coverUrl: game.coverUrl,
     })),
   };
 
@@ -141,6 +143,7 @@ async function waitForBackloggdReady(page: Page, timeoutMs = 90_000): Promise<vo
       challengeVisible;
 
     if (!onChallengePage) {
+      await dismissBackloggdConsentBanner(page);
       return;
     }
 
@@ -157,6 +160,107 @@ async function waitForBackloggdReady(page: Page, timeoutMs = 90_000): Promise<vo
   throw new Error(
     'Backloggd challenge did not clear in time. Retry later or run once with HEADLESS=false to validate access.'
   );
+}
+
+async function dismissBackloggdConsentBanner(page: Page, timeoutMs = 5_000): Promise<boolean> {
+  const start = Date.now();
+
+  async function isPrivacyBannerVisible(root: Page | Frame): Promise<boolean> {
+    const byHeading = await root
+      .getByRole('heading', { name: /privacidade|privacy/i })
+      .first()
+      .isVisible()
+      .catch(() => false);
+    if (byHeading) {
+      return true;
+    }
+
+    return root
+      .getByText(/privacidade|privacy/i)
+      .first()
+      .isVisible()
+      .catch(() => false);
+  }
+
+  async function tryDismissInRoot(root: Page | Frame): Promise<boolean> {
+    if (!(await isPrivacyBannerVisible(root))) {
+      return false;
+    }
+
+    const candidates = [
+      root.getByRole('button', { name: /concordo/i }).first(),
+      root.getByRole('button', { name: /i agree|accept all|^accept$|^agree$/i }).first(),
+      root.locator('#onetrust-accept-btn-handler').first(),
+      root.locator('[data-testid="uc-accept-all-button"]').first(),
+      root.locator('button:has-text("CONCORDO")').first(),
+      root.locator('button:has-text("AGREE")').first(),
+    ];
+
+    for (const button of candidates) {
+      if (!(await button.isVisible().catch(() => false))) {
+        continue;
+      }
+
+      await button.click({ force: true }).catch(() => undefined);
+      await page.waitForTimeout(400);
+
+      if (!(await isPrivacyBannerVisible(root))) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  async function bannerVisibleAnywhere(): Promise<boolean> {
+    if (await isPrivacyBannerVisible(page)) {
+      return true;
+    }
+
+    for (const frame of page.frames()) {
+      if (frame === page.mainFrame()) {
+        continue;
+      }
+      if (await isPrivacyBannerVisible(frame)) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  try {
+    while (Date.now() - start < timeoutMs) {
+      if (await tryDismissInRoot(page)) {
+        if (DEBUG_SYNC) {
+          console.log('Backloggd privacy consent banner dismissed');
+        }
+        return true;
+      }
+
+      for (const frame of page.frames()) {
+        if (frame === page.mainFrame()) {
+          continue;
+        }
+        if (await tryDismissInRoot(frame)) {
+          if (DEBUG_SYNC) {
+            console.log('Backloggd privacy consent banner dismissed (iframe)');
+          }
+          return true;
+        }
+      }
+
+      if (!(await bannerVisibleAnywhere())) {
+        return false;
+      }
+
+      await page.waitForTimeout(300);
+    }
+  } catch {
+    // Non-fatal: consent dismissal must never break the sync flow.
+  }
+
+  return false;
 }
 
 async function waitForBackloggdAuthSurface(
@@ -291,7 +395,10 @@ async function loginBackloggdFromGame(page: Page, returnUrl: string): Promise<vo
   }
 }
 
-async function findPlayingGameCard(page: Page, title: string) {
+async function findPlayingGameCard(
+  page: Page,
+  title: string
+): Promise<{ card: Locator; coverUrl?: string } | null> {
   const normalizedTitle = normalizeText(title);
   const posters = page.locator('#game-lists .card.game-cover');
   const count = await posters.count();
@@ -322,12 +429,24 @@ async function findPlayingGameCard(page: Page, title: string) {
     }
 
     if (haystack === normalizedTitle || haystack.includes(normalizedTitle)) {
-      return candidate;
+      const coverUrl =
+        (await candidate
+          .locator('img')
+          .first()
+          .getAttribute('src')
+          .catch(() => null)) ?? undefined;
+      return { card: candidate, coverUrl };
     }
 
     const compactHaystack = haystack.replace(/[^a-z0-9]+/g, '');
     if (compactHaystack.includes(compactTitle)) {
-      return candidate;
+      const coverUrl =
+        (await candidate
+          .locator('img')
+          .first()
+          .getAttribute('src')
+          .catch(() => null)) ?? undefined;
+      return { card: candidate, coverUrl };
     }
   }
 
@@ -649,7 +768,7 @@ async function confirmJournalSaved(page: Page, gameUrl: string): Promise<void> {
   await logEditorButton.waitFor({ state: 'visible', timeout: 15_000 });
 }
 
-async function openGameLogEditor(page: Page, title: string): Promise<void> {
+async function openGameLogEditor(page: Page, title: string): Promise<{ coverUrl?: string }> {
   await page.goto(backloggdUrl('/u/henriquetavares/playing/'), { waitUntil: 'domcontentloaded' });
   await page.waitForLoadState('networkidle').catch(() => undefined);
   await waitForBackloggdReady(page);
@@ -657,11 +776,12 @@ async function openGameLogEditor(page: Page, title: string): Promise<void> {
 
   await page.locator('#game-lists').first().waitFor({ state: 'visible', timeout: 20_000 });
 
-  const target = await findPlayingGameCard(page, title);
-  if (!target) {
+  const found = await findPlayingGameCard(page, title);
+  if (!found) {
     throw new Error(`Game not found on Backloggd playing page: ${title}`);
   }
 
+  const { card: target, coverUrl } = found;
   const coverLink = target.locator('a.cover-link').first();
   const rawGameHref = (await coverLink.getAttribute('href').catch(() => null)) ?? '';
   await coverLink.click({ force: true });
@@ -722,6 +842,8 @@ async function openGameLogEditor(page: Page, title: string): Promise<void> {
     .locator('#journal-game-modal .modal-body[type="full"], #log-editor-full')
     .first();
   await fullEditor.waitFor({ state: 'visible', timeout: 20_000 });
+
+  return { coverUrl };
 }
 
 function getPlayDateModal(page: Page): Locator {
@@ -952,8 +1074,8 @@ async function openPlayDateModal(page: Page, targetIsoDate: string): Promise<voi
   );
 }
 
-async function logPlaySession(page: Page, game: GamePlaytime): Promise<void> {
-  await openGameLogEditor(page, game.title);
+async function logPlaySession(page: Page, game: GamePlaytime): Promise<string | undefined> {
+  const { coverUrl } = await openGameLogEditor(page, game.title);
   await ensureJournalCalendarVisible(page);
 
   await alignCalendarToReferenceDate(page);
@@ -988,6 +1110,8 @@ async function logPlaySession(page: Page, game: GamePlaytime): Promise<void> {
   await saveLogButton.waitFor({ state: 'visible', timeout: 20_000 });
   await saveLogButton.click({ force: true });
   await confirmJournalSaved(page, gameUrl);
+
+  return coverUrl;
 }
 
 async function main(): Promise<void> {
@@ -1014,10 +1138,10 @@ async function main(): Promise<void> {
     console.log(
       `Found ${games.length} aggregated game(s): ${games.map((game) => `${game.title} (${game.hours}h ${game.minutes}m)`).join(', ') || 'none'}`
     );
-    await writeSyncSummary(games);
 
     if (games.length === 0) {
       console.log('No sessions found for today. Nothing to sync.');
+      await writeSyncSummary(games);
       return;
     }
 
@@ -1034,7 +1158,7 @@ async function main(): Promise<void> {
         await page.waitForLoadState('networkidle').catch(() => undefined);
         await waitForBackloggdReady(page);
         updateBackloggdOriginFromUrl(page.url());
-        await logPlaySession(page, game);
+        game.coverUrl = await logPlaySession(page, game);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         throw new Error(`Failed syncing ${game.title}: ${message}`);
@@ -1054,6 +1178,8 @@ async function main(): Promise<void> {
 
       console.log(`Synced ${game.title} successfully.`);
     }
+
+    await writeSyncSummary(games);
   } finally {
     await context.close().catch(() => undefined);
     await browser.close().catch(() => undefined);

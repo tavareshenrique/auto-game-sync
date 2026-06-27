@@ -171,7 +171,13 @@ Checklist:
 3. Confirme se o estado foi salvo após sincronização.
 4. Rode novamente em headless.
 
-### 2) Não encontrou jogo na lista Playing
+### 2) Banner de privacidade (GDPR/cookies)
+
+O sync tenta aceitar automaticamente o banner de privacidade do Backloggd (ex.: botão **CONCORDO** ou equivalente em inglês) antes de interagir com a página. O consentimento é salvo em `BACKLOGGD_STORAGE_STATE_PATH` junto com a sessão, então normalmente só precisa ser aceito uma vez.
+
+Se o banner continuar bloqueando cliques (por exemplo, `#game-lists` não fica acessível), rode uma vez com `HEADLESS=false SYNC_DEBUG=true pnpm sync` para validar visualmente e confirme que `storage/backloggd-state.json` foi atualizado.
+
+### 3) Não encontrou jogo na lista Playing
 
 Erro típico: `Game not found on Backloggd playing page`.
 
@@ -181,11 +187,11 @@ Verifique:
 2. diferença relevante de nome entre plataformas;
 3. sessão/cookies válidos.
 
-### 3) Login no PS-Timetracker falha
+### 4) Login no PS-Timetracker falha
 
 Verifique `PS_TIMETRACKER_CODE` e `PS_TIMETRACKER_PSN_NAME`.
 
-### 4) Processo interrompido manualmente
+### 5) Processo interrompido manualmente
 
 Se o terminal receber `Ctrl+C`, o Node encerra com código `130` (comportamento esperado).
 

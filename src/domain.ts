@@ -2,6 +2,7 @@ type GamePlaytime = {
   title: string;
   hours: number;
   minutes: number;
+  coverUrl?: string;
 };
 
 type RawSession = {

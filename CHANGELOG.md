@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on Keep a Changelog,
 and this project follows Semantic Versioning.
 
+## [1.1.0] - 2026-06-27
+
+### Added
+
+- Dynamic capture of game cover images (`coverUrl`) from the Backloggd "Playing" page during sync, extracted from the card `<img>` element via Playwright.
+- `coverUrl` field in `GamePlaytime` (domain) and `SyncSummaryGame` (sync summary) to persist cover references in `storage/sync-summary.json`.
+- Email generation script (`scripts/generate-email.ts`) that reads `sync-summary.json` and produces a table-based HTML email with inline styles, compatible with Outlook/Gmail, including cover images with gradient placeholder fallback.
+- Plural/singular verb agreement in the email header (`foi registrado` / `foram registrados`).
+- Automatic dismissal of Backloggd privacy consent banner (`dismissBackloggdConsentBanner`) before interacting with the page, checking both the main document and iframes.
+- Troubleshooting section in README for the privacy consent banner and renumbered existing sections.
+
+### Changed
+
+- Moved `writeSyncSummary` to after the sync loop in `main()` so cover URLs are collected before writing the summary.
+- Updated `.github/workflows/sync-playtimes.yml`: replaced inline Node email builder with `pnpm exec tsx scripts/generate-email.ts`; email delivery now uses `html_body: file://storage/email-body.html`.
+- `tsconfig.json` includes `scripts/**/*.ts` for type checking.
+
 ## [1.0.3] - 2026-06-22
 
 ### Fixed

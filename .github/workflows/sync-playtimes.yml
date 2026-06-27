@@ -39,47 +39,14 @@ jobs:
           SYNC_REFERENCE_DAYS_OFFSET: '-1'
 
       - name: Build success email body
-        if: success()
-        id: build-email-body
+        if: success() && hashFiles('storage/sync-summary.json') != ''
+        run: pnpm exec tsx scripts/generate-email.ts
         env:
           SYNC_SUMMARY_PATH: storage/sync-summary.json
-        run: |
-          node --input-type=module <<'EOF'
-          import { appendFileSync, readFileSync } from 'node:fs';
-
-          const summaryPath = process.env.SYNC_SUMMARY_PATH;
-          if (!summaryPath) {
-            throw new Error('Missing SYNC_SUMMARY_PATH');
-          }
-
-          const raw = readFileSync(summaryPath, 'utf8');
-          const summary = JSON.parse(raw);
-          const games = Array.isArray(summary.games) ? summary.games : [];
-
-          const lines = [];
-          lines.push('Sincronizacao concluida com sucesso.');
-          lines.push('');
-
-          if (games.length === 0) {
-            lines.push('Nenhum jogo sincronizado neste dia.');
-          } else {
-            for (const game of games) {
-              lines.push(`Nome do Jogo: ${game.title}`);
-              lines.push(`Tempo Jogado: ${game.playedTime}`);
-              lines.push(`Dia Cadastrado: ${game.registeredDay}`);
-              lines.push('');
-            }
-          }
-
-          const body = lines.join('\n').trimEnd();
-          appendFileSync(process.env.GITHUB_OUTPUT, `body<<EOF\n${body}\nEOF\n`);
-
-          const shouldSend = games.length > 0 ? 'true' : 'false';
-          appendFileSync(process.env.GITHUB_OUTPUT, `should_send=${shouldSend}\n`);
-          EOF
+          EMAIL_OUTPUT_PATH: storage/email-body.html
 
       - name: Send success email
-        if: success() && steps.build-email-body.outputs.should_send == 'true'
+        if: success() && hashFiles('storage/email-body.html') != ''
         uses: dawidd6/action-send-mail@v3
         with:
           server_address: ${{ secrets.SMTP_HOST }}
@@ -89,4 +56,4 @@ jobs:
           subject: Auto Game Sync - Job concluido com sucesso
           to: ${{ secrets.SYNC_EMAIL_TO }}
           from: ${{ secrets.SYNC_EMAIL_FROM }}
-          body: ${{ steps.build-email-body.outputs.body }}
+          html_body: file://storage/email-body.html
