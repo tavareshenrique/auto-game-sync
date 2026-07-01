@@ -40,13 +40,14 @@ jobs:
 
       - name: Build success email body
         if: success() && hashFiles('storage/sync-summary.json') != ''
+        id: build-email-body
         run: pnpm exec tsx scripts/generate-email.ts
         env:
           SYNC_SUMMARY_PATH: storage/sync-summary.json
           EMAIL_OUTPUT_PATH: storage/email-body.html
 
       - name: Send success email
-        if: success() && hashFiles('storage/email-body.html') != ''
+        if: success() && steps.build-email-body.outputs.should_send == 'true'
         uses: dawidd6/action-send-mail@v3
         with:
           server_address: ${{ secrets.SMTP_HOST }}

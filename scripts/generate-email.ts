@@ -1,5 +1,7 @@
+import { appendFileSync } from 'node:fs';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import * as path from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 const SYNC_SUMMARY_PATH = process.env.SYNC_SUMMARY_PATH ?? 'storage/sync-summary.json';
 const OUTPUT_PATH = process.env.EMAIL_OUTPUT_PATH ?? 'storage/email-body.html';
@@ -11,12 +13,24 @@ type SyncSummaryGame = {
   coverUrl?: string;
 };
 
-type SyncSummary = {
+export type SyncSummary = {
   generatedAt: string;
   referenceDate: string;
   totalGames: number;
   games: SyncSummaryGame[];
 };
+
+export function shouldSendSyncEmail(summary: SyncSummary): boolean {
+  const games = Array.isArray(summary.games) ? summary.games : [];
+  return games.length > 0;
+}
+
+function setStepOutput(name: string, value: string): void {
+  const outputPath = process.env.GITHUB_OUTPUT;
+  if (outputPath) {
+    appendFileSync(outputPath, `${name}=${value}\n`);
+  }
+}
 
 function escapeHtml(text: string): string {
   return text
@@ -179,6 +193,12 @@ async function main(): Promise<void> {
   const raw = await readFile(SYNC_SUMMARY_PATH, 'utf8');
   const summary: SyncSummary = JSON.parse(raw);
 
+  if (!shouldSendSyncEmail(summary)) {
+    console.log('No games synchronized; skipping email generation.');
+    setStepOutput('should_send', 'false');
+    return;
+  }
+
   const html = buildEmailHtml(summary);
 
   const outputDir = path.dirname(OUTPUT_PATH);
@@ -187,10 +207,15 @@ async function main(): Promise<void> {
   }
 
   await writeFile(OUTPUT_PATH, html, 'utf8');
+  setStepOutput('should_send', 'true');
   console.log(`Email body generated at ${OUTPUT_PATH}`);
 }
 
-main().catch((error) => {
-  console.error(error instanceof Error ? error.message : String(error));
-  process.exitCode = 1;
-});
+const isDirectRun = import.meta.url === pathToFileURL(process.argv[1] ?? '').href;
+
+if (isDirectRun) {
+  main().catch((error) => {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exitCode = 1;
+  });
+}
