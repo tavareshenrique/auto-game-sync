@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on Keep a Changelog,
 and this project follows Semantic Versioning.
 
+## [1.1.1] - 2026-07-01
+
+### Fixed
+
+- Restored CI behavior that skips the success email when no games were synchronized, which regressed after the HTML email template replaced the inline workflow guard in v1.1.0.
+
 ## [1.1.0] - 2026-06-27
 
 ### Added
