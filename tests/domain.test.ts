@@ -2,14 +2,19 @@ import { test, expect } from '@playwright/test';
 import {
   aggregateSessions,
   collapseSpaces,
+  describeCatalogCandidates,
   durationToMinutes,
   getMonthIndex,
   getMonthName,
   getReferenceDate,
+  isStandardEditionLabel,
   minutesToDuration,
   normalizeText,
   parseDateCandidates,
   parseDuration,
+  pickPreferredPlatformLabel,
+  pickStandardEditionLabel,
+  selectCatalogCandidate,
   toDisplayDuration,
   toLocalIsoDate,
 } from '../src/domain.js';
@@ -373,5 +378,249 @@ test.describe('getReferenceDate', () => {
     delete process.env.SYNC_REFERENCE_DATE;
     process.env.SYNC_REFERENCE_DAYS_OFFSET = 'abc';
     expect(() => getReferenceDate()).toThrow('Invalid SYNC_REFERENCE_DAYS_OFFSET');
+  });
+});
+
+// --- selectCatalogCandidate ---
+
+test.describe('selectCatalogCandidate', () => {
+  test('keeps an exact title and ignores longer titles', () => {
+    const selection = selectCatalogCandidate('God of War', [
+      { title: 'God of War Ragnarök', slug: 'god-of-war-ragnarok', year: 2022 },
+      { title: 'God of War', slug: 'god-of-war', year: 2018 },
+      { title: 'God of War Remastered', slug: 'god-of-war-remastered', year: 2005 },
+    ]);
+
+    expect(selection).toEqual({
+      status: 'selected',
+      candidate: { title: 'God of War', slug: 'god-of-war', year: 2018 },
+    });
+  });
+
+  test('matches titles ignoring accents and punctuation', () => {
+    const selection = selectCatalogCandidate('God of War: Ragnarök', [
+      { title: 'God of War Ragnarok', slug: 'god-of-war-ragnarok', year: 2022 },
+    ]);
+
+    expect(selection.status).toBe('selected');
+  });
+
+  test('keeps only Main Game when the search reports a category', () => {
+    const selection = selectCatalogCandidate('God of War', [
+      {
+        title: 'God of War',
+        slug: 'god-of-war-dlc',
+        year: 2018,
+        category: 'DLC',
+        platforms: ['PlayStation 5'],
+      },
+      {
+        title: 'God of War',
+        slug: 'god-of-war',
+        year: 2018,
+        category: 'Main Game',
+        platforms: ['PlayStation 4'],
+      },
+    ]);
+
+    expect(selection).toEqual({
+      status: 'selected',
+      candidate: {
+        title: 'God of War',
+        slug: 'god-of-war',
+        year: 2018,
+        category: 'Main Game',
+        platforms: ['PlayStation 4'],
+      },
+    });
+  });
+
+  test('prefers PlayStation 5, then 4, then 3', () => {
+    const candidates = [
+      {
+        title: 'God of War',
+        slug: 'ps3',
+        year: 2005,
+        category: 'Main Game',
+        platforms: ['PS3'],
+      },
+      {
+        title: 'God of War',
+        slug: 'ps4',
+        year: 2018,
+        category: 'Main Game',
+        platforms: ['PlayStation 4', 'Windows PC'],
+      },
+      {
+        title: 'God of War',
+        slug: 'ps5',
+        year: 2022,
+        category: 'Main Game',
+        platforms: ['PlayStation 5'],
+      },
+    ];
+
+    expect(selectCatalogCandidate('God of War', candidates)).toMatchObject({
+      status: 'selected',
+      candidate: { slug: 'ps5' },
+    });
+
+    expect(selectCatalogCandidate('God of War', candidates.slice(0, 2))).toMatchObject({
+      status: 'selected',
+      candidate: { slug: 'ps4' },
+    });
+
+    expect(selectCatalogCandidate('God of War', candidates.slice(0, 1))).toMatchObject({
+      status: 'selected',
+      candidate: { slug: 'ps3' },
+    });
+  });
+
+  test('prefers the PlayStation 5 main game over a same-title remaster', () => {
+    const selection = selectCatalogCandidate('God of War', [
+      {
+        title: 'God of War',
+        slug: 'god-of-war--1',
+        year: 2018,
+        category: 'Main Game',
+        platforms: ['Windows PC', 'PlayStation 5', 'PlayStation 4'],
+      },
+      {
+        title: 'God of War',
+        slug: 'god-of-war',
+        year: 2005,
+        category: 'Main Game',
+        platforms: ['PlayStation 2'],
+      },
+      {
+        title: 'God of War',
+        slug: 'god-of-war--2',
+        year: 2009,
+        category: 'Remaster',
+        platforms: ['PlayStation Vita', 'PlayStation 3'],
+      },
+      {
+        title: 'God of War Ragnarök',
+        slug: 'god-of-war-ragnarok',
+        year: 2022,
+        category: 'Main Game',
+        platforms: ['PlayStation 5'],
+      },
+    ]);
+
+    expect(selection).toMatchObject({
+      status: 'selected',
+      candidate: { slug: 'god-of-war--1', year: 2018 },
+    });
+  });
+
+  test('fails a tie when two games share the best platform', () => {
+    const selection = selectCatalogCandidate('God of War', [
+      {
+        title: 'God of War',
+        slug: 'god-of-war',
+        year: 2005,
+        category: 'Main Game',
+        platforms: ['PlayStation 4', 'PlayStation 3'],
+      },
+      {
+        title: 'God of War',
+        slug: 'god-of-war-2018',
+        year: 2018,
+        category: 'Main Game',
+        platforms: ['PS4'],
+      },
+      {
+        title: 'God of War',
+        slug: 'god-of-war-ps3',
+        year: 2012,
+        category: 'Main Game',
+        platforms: ['PlayStation 3'],
+      },
+    ]);
+
+    expect(selection).toEqual({
+      status: 'tie',
+      candidates: [
+        {
+          title: 'God of War',
+          slug: 'god-of-war',
+          year: 2005,
+          category: 'Main Game',
+          platforms: ['PlayStation 4', 'PlayStation 3'],
+        },
+        {
+          title: 'God of War',
+          slug: 'god-of-war-2018',
+          year: 2018,
+          category: 'Main Game',
+          platforms: ['PS4'],
+        },
+      ],
+    });
+  });
+
+  test('returns no match when nothing has the exact title', () => {
+    const selection = selectCatalogCandidate('God of War', [
+      { title: 'God of War Ragnarök', slug: 'god-of-war-ragnarok', year: 2022 },
+    ]);
+
+    expect(selection.status).toBe('none');
+    if (selection.status === 'none') {
+      expect(selection.candidates.map((candidate) => candidate.slug)).toEqual([
+        'god-of-war-ragnarok',
+      ]);
+    }
+  });
+
+  test('selects the only exact hit when platform is unknown', () => {
+    const selection = selectCatalogCandidate('Hades', [
+      { title: 'Hades', slug: 'hades', year: 2020 },
+      { title: 'Hades II', slug: 'hades-ii', year: 2024 },
+    ]);
+
+    expect(selection).toEqual({
+      status: 'selected',
+      candidate: { title: 'Hades', slug: 'hades', year: 2020 },
+    });
+  });
+});
+
+test.describe('describeCatalogCandidates', () => {
+  test('lists title, year, and slug', () => {
+    expect(
+      describeCatalogCandidates([
+        { title: 'God of War', year: 2005, slug: 'god-of-war' },
+        { title: 'God of War', year: null, slug: 'god-of-war-2018' },
+      ])
+    ).toBe('God of War (2005) [god-of-war]; God of War (unknown year) [god-of-war-2018]');
+  });
+
+  test('says none when the list is empty', () => {
+    expect(describeCatalogCandidates([])).toBe('none');
+  });
+});
+
+test.describe('edition and platform labels', () => {
+  test('recognizes the standard edition labels', () => {
+    expect(isStandardEditionLabel('Standard')).toBe(true);
+    expect(isStandardEditionLabel('Standard Edition')).toBe(true);
+    expect(isStandardEditionLabel('Edição Padrão')).toBe(true);
+    expect(isStandardEditionLabel('Deluxe Edition')).toBe(false);
+  });
+
+  test('picks the standard edition option text', () => {
+    expect(pickStandardEditionLabel(['Deluxe Edition', 'Edição Padrão', 'GOTY'])).toBe(
+      'Edição Padrão'
+    );
+    expect(pickStandardEditionLabel(['Deluxe Edition'])).toBeNull();
+  });
+
+  test('picks the first PlayStation platform in PS5, PS4, PS3 order', () => {
+    expect(
+      pickPreferredPlatformLabel(['Windows PC', 'PlayStation 4', 'PlayStation 3', 'PlayStation 5'])
+    ).toBe('PlayStation 5');
+    expect(pickPreferredPlatformLabel(['Xbox One', 'PS4', 'PS3'])).toBe('PS4');
+    expect(pickPreferredPlatformLabel(['Windows PC', 'Nintendo Switch'])).toBeNull();
   });
 });

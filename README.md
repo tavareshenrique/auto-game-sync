@@ -12,7 +12,7 @@ O projeto:
 
 - coleta sessões recentes no PS-Timetracker;
 - agrega por jogo para uma data de referência;
-- abre a lista Playing do Backloggd;
+- abre a lista Playing do Backloggd e, se o jogo não estiver lá, a página do jogo no catálogo;
 - registra o tempo em cada jogo correspondente;
 - falha com erro (exit code != 0) se algum jogo não for sincronizado.
 
@@ -27,12 +27,15 @@ Fluxo de alto nível:
 5. Abre o Backloggd e garante sessão válida.
 6. Para cada jogo agregado:
    - abre a página do jogo a partir de Playing;
+   - se o jogo não estiver em Playing, busca o título exato no catálogo (só Main Game, quando a categoria vier na busca; PlayStation 5, depois 4, depois 3), abre `/games/{slug}` e, só nesse caso, seleciona a edição Standard e a plataforma;
    - abre o editor completo de log;
    - alinha o calendário ao mês/ano da data de referência;
    - seleciona o dia;
    - preenche horas/minutos;
    - salva o play date e depois o journal.
 7. Opcionalmente salva `storageState` do Playwright para reutilizar sessão.
+
+Um jogo que já está em Playing segue o caminho antigo: o sync não mexe em edição nem em plataforma. O fallback também não marca Playing, Played, Backlog ou Wishlist.
 
 ## Requisitos
 
@@ -177,15 +180,16 @@ O sync tenta aceitar automaticamente o banner de privacidade do Backloggd (ex.: 
 
 Se o banner continuar bloqueando cliques (por exemplo, `#game-lists` não fica acessível), rode uma vez com `HEADLESS=false SYNC_DEBUG=true pnpm sync` para validar visualmente e confirme que `storage/backloggd-state.json` foi atualizado.
 
-### 3) Não encontrou jogo na lista Playing
+### 3) Não deu para logar o jogo fora de Playing
 
-Erro típico: `Game not found on Backloggd playing page`.
+A lista Playing continua sendo o primeiro lugar da busca. Se o título não estiver lá, o sync procura no catálogo e abre a página do jogo. Esse fallback ainda falha quando:
 
-Verifique:
+1. nenhum resultado tem o título exato (`No exact Backloggd catalog match`);
+2. dois jogos empatam na melhor plataforma, por exemplo dois Main Game de anos diferentes ambos no PS4 (`Ambiguous Backloggd catalog match`) — o sync não escolhe o primeiro;
+3. o editor tem opções de edição e nenhuma é `Standard`, `Standard Edition` ou `Edição Padrão` (`No Standard edition`);
+4. a plataforma de lançamento do jogo não inclui PlayStation 5, PlayStation 4 nem PlayStation 3 (`No PlayStation 5, 4, or 3 platform`).
 
-1. o jogo está realmente em Playing;
-2. diferença relevante de nome entre plataformas;
-3. sessão/cookies válidos.
+O erro lista os candidatos (título, ano e slug) ou as opções de edição/plataforma que apareceram. Se o jogo não tiver seletor de edição, o sync segue só com a plataforma.
 
 ### 4) Login no PS-Timetracker falha
 
@@ -207,6 +211,7 @@ Se o terminal receber `Ctrl+C`, o Node encerra com código `130` (comportamento 
 - A URL de usuário do Backloggd está fixa no código (`/u/henriquetavares/playing/`).
 - A leitura do PS-Timetracker está limitada a 5 páginas por execução.
 - A busca de card em Playing varre até 500 itens.
+- Fora de Playing, o título precisa ser exato. Empate na mesma plataforma, edição sem opção Standard, ou jogo sem PS5/PS4/PS3 interrompem o sync.
 - Variações grandes no layout/markup dos sites podem quebrar seletores.
 
 ## Estrutura do projeto
@@ -214,7 +219,7 @@ Se o terminal receber `Ctrl+C`, o Node encerra com código `130` (comportamento 
 ```text
 .
 ├── src/
-│   ├── domain.ts            # parse de duração/data, normalização e agregação
+│   ├── domain.ts            # parse de duração/data, normalização, agregação e escolha no catálogo
 │   ├── ps-timetracker.ts    # login e scraping de sessões no PS-Timetracker
 │   └── sync-playtimes.ts    # orquestração do sync com Backloggd
 ├── storage/                 # estado de sessão Playwright (opcional)

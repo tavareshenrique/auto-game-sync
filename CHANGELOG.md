@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on Keep a Changelog,
 and this project follows Semantic Versioning.
 
+## [1.2.0] - 2026-10-06
+
+### Added
+
+- Catalog fallback when a game is missing from the Backloggd Playing list: resolve an exact title, open `/games/{slug}`, and fill the journal with a Standard edition and PlayStation 5, then 4, then 3.
+- Domain selection for exact titles, Main Game category, and PS5/PS4/PS3 order, with unit tests.
+- README notes for the cases that still fail: no exact title, a platform tie, no Standard edition, or no PS5/PS4/PS3.
+
 ## [1.1.1] - 2026-07-01
 
 ### Fixed

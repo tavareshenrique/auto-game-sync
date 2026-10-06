@@ -189,6 +189,133 @@ function getMonthName(monthIndex: number): string {
   return names[monthIndex] ?? '';
 }
 
+type CatalogCandidate = {
+  title: string;
+  slug: string;
+  year?: number | null;
+  category?: string | null;
+  platforms?: readonly string[];
+  coverUrl?: string;
+};
+
+type CatalogSelection =
+  | { status: 'selected'; candidate: CatalogCandidate }
+  | { status: 'none'; candidates: CatalogCandidate[] }
+  | { status: 'tie'; candidates: CatalogCandidate[] };
+
+const PLATFORM_PREFERENCE = [
+  ['playstation 5', 'ps5'],
+  ['playstation 4', 'ps4'],
+  ['playstation 3', 'ps3'],
+] as const;
+
+const STANDARD_EDITION_LABELS = new Set(['standard', 'standard edition', 'edicao padrao']);
+
+function platformLabelMatches(platform: string, label: string): boolean {
+  const normalized = normalizeText(platform);
+  return new RegExp(`(?:^|\\s)${label}(?:\\s|$)`).test(normalized);
+}
+
+function bestPlatformRank(platforms: readonly string[] | undefined): number | null {
+  if (!platforms || platforms.length === 0) {
+    return null;
+  }
+
+  for (let rank = 0; rank < PLATFORM_PREFERENCE.length; rank += 1) {
+    const labels = PLATFORM_PREFERENCE[rank];
+    if (
+      platforms.some((platform) => labels.some((label) => platformLabelMatches(platform, label)))
+    ) {
+      return rank;
+    }
+  }
+
+  return null;
+}
+
+function isMainGameCategory(category: string): boolean {
+  return normalizeText(category) === 'main game';
+}
+
+function selectCatalogCandidate(
+  title: string,
+  candidates: readonly CatalogCandidate[]
+): CatalogSelection {
+  const expectedTitle = normalizeText(title);
+  const exact = candidates.filter((candidate) => normalizeText(candidate.title) === expectedTitle);
+  if (exact.length === 0) {
+    return { status: 'none', candidates: [...candidates] };
+  }
+
+  const categoryInformed = exact.some(
+    (candidate) => candidate.category != null && candidate.category.trim() !== ''
+  );
+  const pool = categoryInformed
+    ? exact.filter((candidate) => isMainGameCategory(candidate.category ?? ''))
+    : exact;
+  if (pool.length === 0) {
+    return { status: 'none', candidates: exact };
+  }
+
+  const ranked = pool.map((candidate) => ({
+    candidate,
+    rank: bestPlatformRank(candidate.platforms),
+  }));
+  const withRank = ranked.filter(
+    (item): item is { candidate: CatalogCandidate; rank: number } => item.rank !== null
+  );
+
+  if (withRank.length > 0) {
+    const bestRank = Math.min(...withRank.map((item) => item.rank));
+    const winners = withRank.filter((item) => item.rank === bestRank).map((item) => item.candidate);
+    if (winners.length === 1) {
+      return { status: 'selected', candidate: winners[0] };
+    }
+
+    return { status: 'tie', candidates: winners };
+  }
+
+  if (pool.length === 1) {
+    return { status: 'selected', candidate: pool[0] };
+  }
+
+  return { status: 'tie', candidates: pool };
+}
+
+function describeCatalogCandidates(candidates: readonly CatalogCandidate[]): string {
+  if (candidates.length === 0) {
+    return 'none';
+  }
+
+  return candidates
+    .map((candidate) => {
+      const year = candidate.year == null ? 'unknown year' : String(candidate.year);
+      return `${candidate.title} (${year}) [${candidate.slug}]`;
+    })
+    .join('; ');
+}
+
+function isStandardEditionLabel(label: string): boolean {
+  return STANDARD_EDITION_LABELS.has(normalizeText(label));
+}
+
+function pickStandardEditionLabel(options: readonly string[]): string | null {
+  return options.find((option) => isStandardEditionLabel(option)) ?? null;
+}
+
+function pickPreferredPlatformLabel(options: readonly string[]): string | null {
+  for (const labels of PLATFORM_PREFERENCE) {
+    const match = options.find((option) =>
+      labels.some((label) => platformLabelMatches(option, label))
+    );
+    if (match) {
+      return match;
+    }
+  }
+
+  return null;
+}
+
 function aggregateSessions(sessions: RawSession[]): GamePlaytime[] {
   const totals = new Map<string, { title: string; minutes: number }>();
 
@@ -212,18 +339,23 @@ function aggregateSessions(sessions: RawSession[]): GamePlaytime[] {
   });
 }
 
-export type { GamePlaytime, RawSession };
+export type { CatalogCandidate, CatalogSelection, GamePlaytime, RawSession };
 export {
   aggregateSessions,
   collapseSpaces,
+  describeCatalogCandidates,
   durationToMinutes,
   getMonthIndex,
   getMonthName,
   getReferenceDate,
+  isStandardEditionLabel,
   minutesToDuration,
   normalizeText,
   parseDateCandidates,
   parseDuration,
+  pickPreferredPlatformLabel,
+  pickStandardEditionLabel,
+  selectCatalogCandidate,
   toDisplayDuration,
   toLocalIsoDate,
 };
