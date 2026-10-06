@@ -3,13 +3,18 @@ import { mkdir, access, writeFile } from 'node:fs/promises';
 import { chromium, type Page, type Frame, type BrowserContext, type Locator } from 'playwright';
 import {
   collapseSpaces,
+  describeCatalogCandidates,
   durationToMinutes,
   getMonthIndex,
   getMonthName,
   getReferenceDate,
   normalizeText,
+  pickPreferredPlatformLabel,
+  pickStandardEditionLabel,
+  selectCatalogCandidate,
   toDisplayDuration,
   toLocalIsoDate,
+  type CatalogCandidate,
   type GamePlaytime,
 } from './domain.js';
 import { loginIfNeeded, scrapeSessions } from './ps-timetracker.js';
@@ -513,10 +518,7 @@ async function readCalendarMonthYear(
   return { monthText: monthFromSelect, yearText: yearFromSelect };
 }
 
-async function refreshBootstrapSelect(
-  page: Page,
-  selectId: 'month-selector' | 'year-selector'
-): Promise<void> {
+async function refreshBootstrapSelect(page: Page, selectId: string): Promise<void> {
   await page
     .evaluate((id) => {
       const select = document.querySelector(
@@ -768,7 +770,247 @@ async function confirmJournalSaved(page: Page, gameUrl: string): Promise<void> {
   await logEditorButton.waitFor({ state: 'visible', timeout: 15_000 });
 }
 
-async function openGameLogEditor(page: Page, title: string): Promise<{ coverUrl?: string }> {
+async function readAutocompleteHits(page: Page, title: string): Promise<CatalogCandidate[]> {
+  return page.evaluate(async (query) => {
+    const response = await fetch(`/autocomplete.json?query=${encodeURIComponent(query)}`, {
+      credentials: 'include',
+      headers: { Accept: 'application/json' },
+    });
+    if (!response.ok) {
+      throw new Error(`Backloggd autocomplete failed (${response.status})`);
+    }
+
+    const payload: unknown = await response.json();
+    const suggestions = Array.isArray(payload)
+      ? payload
+      : payload &&
+          typeof payload === 'object' &&
+          Array.isArray((payload as { suggestions?: unknown }).suggestions)
+        ? (payload as { suggestions: unknown[] }).suggestions
+        : [];
+
+    const hits: CatalogCandidate[] = [];
+    for (const suggestion of suggestions) {
+      if (!suggestion || typeof suggestion !== 'object') {
+        continue;
+      }
+
+      const record = suggestion as { value?: unknown; data?: unknown };
+      const data =
+        record.data && typeof record.data === 'object'
+          ? (record.data as Record<string, unknown>)
+          : {};
+      const slug = typeof data.slug === 'string' ? data.slug : '';
+      if (!slug) {
+        continue;
+      }
+
+      const hitTitle =
+        typeof data.title === 'string'
+          ? data.title
+          : typeof record.value === 'string'
+            ? record.value
+            : slug;
+      const rawYear = data.year;
+      const parsedYear =
+        typeof rawYear === 'number'
+          ? rawYear
+          : typeof rawYear === 'string'
+            ? Number.parseInt(rawYear, 10)
+            : Number.NaN;
+
+      hits.push({
+        title: hitTitle,
+        slug,
+        year: Number.isFinite(parsedYear) ? parsedYear : null,
+      });
+    }
+
+    return hits;
+  }, title);
+}
+
+async function readSearchHits(page: Page, title: string): Promise<CatalogCandidate[]> {
+  return page.evaluate(async (query) => {
+    const response = await fetch(`/search/results/?query=${encodeURIComponent(query)}&type=games`, {
+      credentials: 'include',
+      headers: { Accept: 'text/vnd.turbo-stream.html' },
+    });
+    if (!response.ok) {
+      throw new Error(`Backloggd search failed (${response.status})`);
+    }
+
+    const html = await response.text();
+    const wrapped = new DOMParser().parseFromString(html, 'text/html');
+    const templateHtml = [...wrapped.querySelectorAll('template')]
+      .map((template) => template.innerHTML)
+      .join('\n');
+    const documentRoot = new DOMParser().parseFromString(templateHtml || html, 'text/html');
+    const hits: CatalogCandidate[] = [];
+    const seen = new Set<string>();
+
+    for (const row of documentRoot.querySelectorAll('.result')) {
+      const href = row.querySelector('a[href^="/games/"]')?.getAttribute('href') ?? '';
+      const slug = href.match(/\/games\/([^/?#]+)/)?.[1] ?? '';
+      if (!slug || seen.has(slug)) {
+        continue;
+      }
+      seen.add(slug);
+
+      const name = row.querySelector('.game-name h3');
+      const yearText = name?.querySelector('.subtitle-text')?.textContent ?? '';
+      const titleNode = name?.cloneNode(true) as HTMLElement | null;
+      titleNode?.querySelectorAll('.subtitle-text').forEach((node) => node.remove());
+      const hitTitle = (titleNode?.textContent ?? '').replace(/\s+/g, ' ').trim();
+      const parsedYear = Number.parseInt(yearText, 10);
+
+      let category: string | null = null;
+      const platforms: string[] = [];
+      for (const chip of row.querySelectorAll('.search-result-platforms .game-details-value')) {
+        const label = (chip.textContent ?? '').replace(/\s+/g, ' ').trim();
+        if (!label || /^\+\d+\s+more$/i.test(label)) {
+          continue;
+        }
+        if (chip.classList.contains('game-result-type')) {
+          category = label;
+        } else if (!platforms.includes(label)) {
+          platforms.push(label);
+        }
+      }
+
+      hits.push({
+        title: hitTitle || slug,
+        slug,
+        year: Number.isFinite(parsedYear) ? parsedYear : null,
+        category,
+        platforms,
+        coverUrl: row.querySelector('img.card-img')?.getAttribute('src') ?? undefined,
+      });
+    }
+
+    return hits;
+  }, title);
+}
+
+async function resolveCatalogGame(page: Page, title: string): Promise<CatalogCandidate> {
+  const autocompleteHits = await readAutocompleteHits(page, title);
+  const exactCount = autocompleteHits.filter(
+    (hit) => normalizeText(hit.title) === normalizeText(title)
+  ).length;
+  const searchHits = exactCount > 1 ? await readSearchHits(page, title) : [];
+  const pool = searchHits.length > 0 ? searchHits : autocompleteHits;
+  const selection = selectCatalogCandidate(title, pool);
+
+  if (selection.status === 'selected') {
+    return selection.candidate;
+  }
+
+  const reason =
+    selection.status === 'tie'
+      ? `Ambiguous Backloggd catalog match for ${title}`
+      : `No exact Backloggd catalog match for ${title}`;
+  throw new Error(`${reason}. Candidates: ${describeCatalogCandidates(selection.candidates)}`);
+}
+
+async function readGamePageCover(page: Page): Promise<string | undefined> {
+  const cover = await page
+    .locator('#game-cover-art img')
+    .first()
+    .getAttribute('src')
+    .catch(() => null);
+  if (cover) {
+    return cover;
+  }
+
+  const ogImage = await page
+    .locator('meta[property="og:image"]')
+    .first()
+    .getAttribute('content')
+    .catch(() => null);
+  return ogImage || undefined;
+}
+
+async function readOptionLabels(select: Locator): Promise<string[]> {
+  return select
+    .locator('option')
+    .evaluateAll((options) =>
+      options
+        .map((option) => (option.textContent ?? '').replace(/\s+/g, ' ').trim())
+        .filter((label) => label.length > 0)
+    );
+}
+
+async function fillCatalogFallbackEditionAndPlatform(page: Page, title: string): Promise<void> {
+  const editionSelect = page.locator('#log-editor-full select#game_edition').first();
+  if ((await editionSelect.count()) > 0) {
+    const editionOptions = await editionSelect.evaluate((element) => {
+      const select = element as HTMLSelectElement & {
+        tomselect?: { options: Record<string, { text?: string; value?: string }> };
+      };
+      const fromTomSelect = select.tomselect
+        ? Object.values(select.tomselect.options).map((option) => ({
+            value: String(option.value ?? ''),
+            label: (option.text ?? '').replace(/\s+/g, ' ').trim(),
+          }))
+        : [];
+      const fromNative = [...select.options].map((option) => ({
+        value: option.value,
+        label: (option.textContent ?? '').replace(/\s+/g, ' ').trim(),
+      }));
+      const options = fromTomSelect.length > 0 ? fromTomSelect : fromNative;
+      return options.filter((option) => option.value && option.label);
+    });
+
+    if (editionOptions.length > 0) {
+      const editionLabel = pickStandardEditionLabel(editionOptions.map((option) => option.label));
+      const edition = editionOptions.find((option) => option.label === editionLabel);
+      if (!edition) {
+        throw new Error(
+          `No Standard edition for ${title}. Editions: ${editionOptions
+            .map((option) => option.label)
+            .join(', ')}`
+        );
+      }
+
+      await editionSelect.evaluate((element, value) => {
+        const select = element as HTMLSelectElement & {
+          tomselect?: { setValue: (next: string) => void };
+        };
+        if (select.tomselect) {
+          select.tomselect.setValue(value);
+          return;
+        }
+
+        select.value = value;
+        select.dispatchEvent(new Event('change', { bubbles: true }));
+      }, edition.value);
+      await page.waitForTimeout(300);
+    }
+  }
+
+  const platformSelect = page.locator('#log-editor-full select#playthrough_platform').first();
+  if ((await platformSelect.count()) === 0) {
+    throw new Error(`No PlayStation 5, 4, or 3 platform for ${title}. Platforms: none`);
+  }
+
+  const platformLabels = await readOptionLabels(platformSelect);
+  const platformLabel = pickPreferredPlatformLabel(platformLabels);
+  if (!platformLabel) {
+    throw new Error(
+      `No PlayStation 5, 4, or 3 platform for ${title}. Platforms: ${
+        platformLabels.join(', ') || 'none'
+      }`
+    );
+  }
+
+  await platformSelect.selectOption({ label: platformLabel });
+  await refreshBootstrapSelect(page, 'playthrough_platform');
+}
+
+async function openGameLogEditor(
+  page: Page,
+  title: string
+): Promise<{ coverUrl?: string; usedCatalogFallback: boolean }> {
   await page.goto(backloggdUrl('/u/henriquetavares/playing/'), { waitUntil: 'domcontentloaded' });
   await page.waitForLoadState('networkidle').catch(() => undefined);
   await waitForBackloggdReady(page);
@@ -777,34 +1019,53 @@ async function openGameLogEditor(page: Page, title: string): Promise<{ coverUrl?
   await page.locator('#game-lists').first().waitFor({ state: 'visible', timeout: 20_000 });
 
   const found = await findPlayingGameCard(page, title);
-  if (!found) {
-    throw new Error(`Game not found on Backloggd playing page: ${title}`);
-  }
-
-  const { card: target, coverUrl } = found;
-  const coverLink = target.locator('a.cover-link').first();
-  const rawGameHref = (await coverLink.getAttribute('href').catch(() => null)) ?? '';
-  await coverLink.click({ force: true });
-  await page.waitForLoadState('domcontentloaded');
-  await page.waitForLoadState('networkidle').catch(() => undefined);
-  updateBackloggdOriginFromUrl(page.url());
-
+  let coverUrl: string | undefined;
+  let usedCatalogFallback = false;
   let gameUrl = page.url();
-  const currentPath = (() => {
-    try {
-      return new URL(gameUrl).pathname;
-    } catch {
-      return '';
-    }
-  })();
 
-  if (!/\/games\//i.test(currentPath) && rawGameHref) {
-    const forcedGameUrl = new URL(rawGameHref, `${BACKLOGGD_ACTIVE_ORIGIN}/`).toString();
-    await page.goto(forcedGameUrl, { waitUntil: 'domcontentloaded' });
+  if (found) {
+    coverUrl = found.coverUrl;
+    const coverLink = found.card.locator('a.cover-link').first();
+    const rawGameHref = (await coverLink.getAttribute('href').catch(() => null)) ?? '';
+    await coverLink.click({ force: true });
+    await page.waitForLoadState('domcontentloaded');
+    await page.waitForLoadState('networkidle').catch(() => undefined);
+    updateBackloggdOriginFromUrl(page.url());
+
+    gameUrl = page.url();
+    const currentPath = (() => {
+      try {
+        return new URL(gameUrl).pathname;
+      } catch {
+        return '';
+      }
+    })();
+
+    if (!/\/games\//i.test(currentPath) && rawGameHref) {
+      const forcedGameUrl = new URL(rawGameHref, `${BACKLOGGD_ACTIVE_ORIGIN}/`).toString();
+      await page.goto(forcedGameUrl, { waitUntil: 'domcontentloaded' });
+      await page.waitForLoadState('networkidle').catch(() => undefined);
+      await waitForBackloggdReady(page).catch(() => undefined);
+      updateBackloggdOriginFromUrl(page.url());
+      gameUrl = page.url();
+    }
+  } else {
+    if (DEBUG_SYNC) {
+      console.log(`Game not on Playing list, searching Backloggd catalog: ${title}`);
+    }
+
+    const game = await resolveCatalogGame(page, title);
+    usedCatalogFallback = true;
+    coverUrl = game.coverUrl;
+    await page.goto(backloggdUrl(`/games/${game.slug}/`), { waitUntil: 'domcontentloaded' });
     await page.waitForLoadState('networkidle').catch(() => undefined);
     await waitForBackloggdReady(page).catch(() => undefined);
     updateBackloggdOriginFromUrl(page.url());
     gameUrl = page.url();
+
+    if (!coverUrl) {
+      coverUrl = await readGamePageCover(page);
+    }
   }
 
   const gamePath = (() => {
@@ -843,7 +1104,7 @@ async function openGameLogEditor(page: Page, title: string): Promise<{ coverUrl?
     .first();
   await fullEditor.waitFor({ state: 'visible', timeout: 20_000 });
 
-  return { coverUrl };
+  return { coverUrl, usedCatalogFallback };
 }
 
 function getPlayDateModal(page: Page): Locator {
@@ -1075,7 +1336,10 @@ async function openPlayDateModal(page: Page, targetIsoDate: string): Promise<voi
 }
 
 async function logPlaySession(page: Page, game: GamePlaytime): Promise<string | undefined> {
-  const { coverUrl } = await openGameLogEditor(page, game.title);
+  const { coverUrl, usedCatalogFallback } = await openGameLogEditor(page, game.title);
+  if (usedCatalogFallback) {
+    await fillCatalogFallbackEditionAndPlatform(page, game.title);
+  }
   await ensureJournalCalendarVisible(page);
 
   await alignCalendarToReferenceDate(page);
