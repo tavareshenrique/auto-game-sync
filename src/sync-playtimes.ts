@@ -940,9 +940,32 @@ async function readOptionLabels(select: Locator): Promise<string[]> {
     );
 }
 
+async function waitForPlatformLabels(page: Page, select: Locator): Promise<string[]> {
+  const attached = await select
+    .waitFor({ state: 'attached', timeout: 15_000 })
+    .then(() => true)
+    .catch(() => false);
+  if (!attached) {
+    return [];
+  }
+
+  const deadline = Date.now() + 8_000;
+  let labels = await readOptionLabels(select);
+  while (labels.length === 0 && Date.now() < deadline) {
+    await page.waitForTimeout(200);
+    labels = await readOptionLabels(select);
+  }
+
+  return labels;
+}
+
 async function fillCatalogFallbackEditionAndPlatform(page: Page, title: string): Promise<void> {
   const editionSelect = page.locator('#log-editor-full select#game_edition').first();
-  if ((await editionSelect.count()) > 0) {
+  const editionAttached = await editionSelect
+    .waitFor({ state: 'attached', timeout: 5_000 })
+    .then(() => true)
+    .catch(() => false);
+  if (editionAttached) {
     const editionOptions = await editionSelect.evaluate((element) => {
       const select = element as HTMLSelectElement & {
         tomselect?: { options: Record<string, { text?: string; value?: string }> };
@@ -989,11 +1012,7 @@ async function fillCatalogFallbackEditionAndPlatform(page: Page, title: string):
   }
 
   const platformSelect = page.locator('#log-editor-full select#playthrough_platform').first();
-  if ((await platformSelect.count()) === 0) {
-    throw new Error(`No PlayStation 5, 4, or 3 platform for ${title}. Platforms: none`);
-  }
-
-  const platformLabels = await readOptionLabels(platformSelect);
+  const platformLabels = await waitForPlatformLabels(page, platformSelect);
   const platformLabel = pickPreferredPlatformLabel(platformLabels);
   if (!platformLabel) {
     throw new Error(

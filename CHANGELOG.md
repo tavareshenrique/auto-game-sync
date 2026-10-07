@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on Keep a Changelog,
 and this project follows Semantic Versioning.
 
+## [1.2.1] - 2026-10-06
+
+### Fixed
+
+- Catalog fallback waits for the log editor to finish loading the release platform list before choosing PlayStation 5, then 4, then 3. The select was still empty when the modal first opened.
+
 ## [1.2.0] - 2026-10-06
 
 ### Added
