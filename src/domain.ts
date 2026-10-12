@@ -316,6 +316,15 @@ function pickPreferredPlatformLabel(options: readonly string[]): string | null {
   return null;
 }
 
+function visibleOptionLabel(textContent: string, dataContent?: string | null): string {
+  const text = collapseSpaces(textContent);
+  if (text.length > 0) {
+    return text;
+  }
+
+  return collapseSpaces((dataContent ?? '').replace(/<[^>]*>/g, ' '));
+}
+
 function aggregateSessions(sessions: RawSession[]): GamePlaytime[] {
   const totals = new Map<string, { title: string; minutes: number }>();
 
@@ -355,6 +364,7 @@ export {
   parseDuration,
   pickPreferredPlatformLabel,
   pickStandardEditionLabel,
+  visibleOptionLabel,
   selectCatalogCandidate,
   toDisplayDuration,
   toLocalIsoDate,

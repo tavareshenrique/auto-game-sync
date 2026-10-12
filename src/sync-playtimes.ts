@@ -11,6 +11,7 @@ import {
   normalizeText,
   pickPreferredPlatformLabel,
   pickStandardEditionLabel,
+  visibleOptionLabel,
   selectCatalogCandidate,
   toDisplayDuration,
   toLocalIsoDate,
@@ -533,7 +534,7 @@ async function refreshBootstrapSelect(page: Page, selectId: string): Promise<voi
       const jQuery = (
         window as {
           jQuery?: (element: Element) => {
-            selectpicker: (method: string, value?: string) => void;
+            selectpicker: (method?: string, value?: string) => void;
             trigger: (event: string) => void;
           };
         }
@@ -930,100 +931,315 @@ async function readGamePageCover(page: Page): Promise<string | undefined> {
   return ogImage || undefined;
 }
 
-async function readOptionLabels(select: Locator): Promise<string[]> {
-  return select
-    .locator('option')
-    .evaluateAll((options) =>
-      options
-        .map((option) => (option.textContent ?? '').replace(/\s+/g, ' ').trim())
-        .filter((label) => label.length > 0)
-    );
+type PlatformOption = {
+  value: string;
+  label: string;
+};
+
+type EditionSelectElement = HTMLSelectElement & {
+  tomselect?: {
+    options: Record<string, { text?: string; value?: string }>;
+    setValue: (next: string) => void;
+  };
+};
+
+const RELEASE_PLATFORM_SOURCE_SELECTOR =
+  '#log-editor-full .game-platform-options, #game-log-dropdown-options .game-platform-options';
+
+const EDITION_PLATFORM_SOURCE_SELECTOR =
+  '#log-editor-full .game-platform-options-edition, #game-log-dropdown-options .game-platform-options-edition';
+
+const EDITION_ATTRIBUTE_NAMES = [
+  'data-edition-id',
+  'data-edition',
+  'data-id',
+  'data-game-edition-id',
+] as const;
+
+function releasePlatformListError(title: string): Error {
+  return new Error(`Release platform list did not load for ${title}`);
 }
 
-async function waitForPlatformLabels(page: Page, select: Locator): Promise<string[]> {
-  const attached = await select
+async function readPlatformOptions(select: Locator): Promise<PlatformOption[]> {
+  const raw = await select.locator('option').evaluateAll((options) =>
+    options.map((option) => ({
+      value: (option as HTMLOptionElement).value,
+      text: option.textContent ?? '',
+      dataContent: option.getAttribute('data-content'),
+    }))
+  );
+
+  return raw
+    .map((option) => ({
+      value: option.value,
+      label: visibleOptionLabel(option.text, option.dataContent),
+    }))
+    .filter((option) => option.value.length > 0 && option.label.length > 0);
+}
+
+async function waitForReleasePlatformSource(page: Page): Promise<boolean> {
+  return page
+    .locator(`${RELEASE_PLATFORM_SOURCE_SELECTOR} option`)
+    .first()
     .waitFor({ state: 'attached', timeout: 15_000 })
     .then(() => true)
     .catch(() => false);
-  if (!attached) {
-    return [];
-  }
-
-  const deadline = Date.now() + 8_000;
-  let labels = await readOptionLabels(select);
-  while (labels.length === 0 && Date.now() < deadline) {
-    await page.waitForTimeout(200);
-    labels = await readOptionLabels(select);
-  }
-
-  return labels;
 }
 
-async function fillCatalogFallbackEditionAndPlatform(page: Page, title: string): Promise<void> {
+async function waitForPlatformOptions(
+  page: Page,
+  select: Locator,
+  timeoutMs: number
+): Promise<PlatformOption[]> {
+  const deadline = Date.now() + timeoutMs;
+  let options = await readPlatformOptions(select);
+  while (options.length === 0 && Date.now() < deadline) {
+    await page.waitForTimeout(200);
+    options = await readPlatformOptions(select);
+  }
+
+  return options;
+}
+
+async function chooseStandardEdition(page: Page, title: string): Promise<string | null> {
   const editionSelect = page.locator('#log-editor-full select#game_edition').first();
   const editionAttached = await editionSelect
     .waitFor({ state: 'attached', timeout: 5_000 })
     .then(() => true)
     .catch(() => false);
-  if (editionAttached) {
-    const editionOptions = await editionSelect.evaluate((element) => {
-      const select = element as HTMLSelectElement & {
-        tomselect?: { options: Record<string, { text?: string; value?: string }> };
-      };
-      const fromTomSelect = select.tomselect
-        ? Object.values(select.tomselect.options).map((option) => ({
-            value: String(option.value ?? ''),
-            label: (option.text ?? '').replace(/\s+/g, ' ').trim(),
-          }))
-        : [];
-      const fromNative = [...select.options].map((option) => ({
-        value: option.value,
-        label: (option.textContent ?? '').replace(/\s+/g, ' ').trim(),
-      }));
-      const options = fromTomSelect.length > 0 ? fromTomSelect : fromNative;
-      return options.filter((option) => option.value && option.label);
-    });
-
-    if (editionOptions.length > 0) {
-      const editionLabel = pickStandardEditionLabel(editionOptions.map((option) => option.label));
-      const edition = editionOptions.find((option) => option.label === editionLabel);
-      if (!edition) {
-        throw new Error(
-          `No Standard edition for ${title}. Editions: ${editionOptions
-            .map((option) => option.label)
-            .join(', ')}`
-        );
-      }
-
-      await editionSelect.evaluate((element, value) => {
-        const select = element as HTMLSelectElement & {
-          tomselect?: { setValue: (next: string) => void };
-        };
-        if (select.tomselect) {
-          select.tomselect.setValue(value);
-          return;
-        }
-
-        select.value = value;
-        select.dispatchEvent(new Event('change', { bubbles: true }));
-      }, edition.value);
-      await page.waitForTimeout(300);
-    }
+  if (!editionAttached) {
+    return null;
   }
 
-  const platformSelect = page.locator('#log-editor-full select#playthrough_platform').first();
-  const platformLabels = await waitForPlatformLabels(page, platformSelect);
-  const platformLabel = pickPreferredPlatformLabel(platformLabels);
-  if (!platformLabel) {
+  const editionOptions = await editionSelect.evaluate((element) => {
+    const select = element as EditionSelectElement;
+    const fromTomSelect = select.tomselect
+      ? Object.values(select.tomselect.options).map((option) => ({
+          value: String(option.value ?? ''),
+          label: (option.text ?? '').replace(/\s+/g, ' ').trim(),
+        }))
+      : [];
+    const fromNative = [...select.options].map((option) => ({
+      value: option.value,
+      label: (option.textContent ?? '').replace(/\s+/g, ' ').trim(),
+    }));
+    const options = fromTomSelect.length > 0 ? fromTomSelect : fromNative;
+    return options.filter((option) => option.value && option.label);
+  });
+
+  if (editionOptions.length === 0) {
+    return null;
+  }
+
+  const editionLabel = pickStandardEditionLabel(editionOptions.map((option) => option.label));
+  const edition = editionOptions.find((option) => option.label === editionLabel);
+  if (!edition) {
     throw new Error(
-      `No PlayStation 5, 4, or 3 platform for ${title}. Platforms: ${
-        platformLabels.join(', ') || 'none'
-      }`
+      `No Standard edition for ${title}. Editions: ${editionOptions
+        .map((option) => option.label)
+        .join(', ')}`
     );
   }
 
-  await platformSelect.selectOption({ label: platformLabel });
-  await refreshBootstrapSelect(page, 'playthrough_platform');
+  return edition.value;
+}
+
+async function triggerEditionChange(page: Page, editionValue: string): Promise<void> {
+  const editionSelect = page.locator('#log-editor-full select#game_edition').first();
+  await editionSelect.evaluate((element, value) => {
+    const select = element as EditionSelectElement;
+    if (select.tomselect) {
+      select.tomselect.setValue(value);
+    }
+
+    const jQuery = (
+      window as Window & {
+        jQuery?: (element: Element) => {
+          val: (next: string) => { trigger: (event: string) => void };
+          trigger: (event: string) => void;
+        };
+      }
+    ).jQuery;
+    if (jQuery) {
+      jQuery(select).val(value).trigger('change');
+      return;
+    }
+
+    select.value = value;
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+  }, editionValue);
+}
+
+async function copyReleasePlatformsIntoSelect(
+  page: Page,
+  editionValue: string | null
+): Promise<void> {
+  await page.evaluate(
+    ({ editionId, baseSelector, editionSelector, editionAttributeNames }) => {
+      function matchesEdition(element: Element, id: string): boolean {
+        return editionAttributeNames.some((name) => element.getAttribute(name) === id);
+      }
+
+      function elementOptionsHtml(element: Element): string {
+        if (element instanceof HTMLOptionElement) {
+          return element.outerHTML;
+        }
+
+        const html = element.innerHTML;
+        if (/<option\b/i.test(html)) {
+          return html;
+        }
+
+        return [...element.querySelectorAll('option')].map((option) => option.outerHTML).join('');
+      }
+
+      const bases = [...document.querySelectorAll(baseSelector)];
+      const base =
+        bases.find(
+          (element) => element instanceof HTMLOptionElement || element.querySelector('option')
+        ) ?? null;
+      const select = document.querySelector('#log-editor-full select#playthrough_platform');
+      if (!(select instanceof HTMLSelectElement) || !base) {
+        return;
+      }
+
+      let editionHtml = '';
+      if (editionId) {
+        document.querySelectorAll(editionSelector).forEach((node) => {
+          if (node instanceof HTMLOptionElement) {
+            if (matchesEdition(node, editionId)) {
+              editionHtml += node.outerHTML;
+            }
+            return;
+          }
+
+          if (matchesEdition(node, editionId)) {
+            editionHtml += elementOptionsHtml(node);
+            return;
+          }
+
+          node.querySelectorAll('option').forEach((option) => {
+            if (matchesEdition(option, editionId)) {
+              editionHtml += option.outerHTML;
+            }
+          });
+        });
+      }
+
+      select.innerHTML = `${elementOptionsHtml(base)}${editionHtml}`;
+
+      const jQuery = (
+        window as Window & {
+          jQuery?: (element: Element) => {
+            selectpicker: (method?: string, value?: string) => void;
+          };
+        }
+      ).jQuery;
+      if (!jQuery || typeof jQuery(select).selectpicker !== 'function') {
+        return;
+      }
+
+      try {
+        jQuery(select).selectpicker('refresh');
+      } catch {
+        jQuery(select).selectpicker();
+      }
+    },
+    {
+      editionId: editionValue,
+      baseSelector: RELEASE_PLATFORM_SOURCE_SELECTOR,
+      editionSelector: EDITION_PLATFORM_SOURCE_SELECTOR,
+      editionAttributeNames: EDITION_ATTRIBUTE_NAMES,
+    }
+  );
+}
+
+async function setPlaythroughPlatformValue(page: Page, value: string): Promise<boolean> {
+  return page.evaluate((next) => {
+    const select = document.querySelector('#log-editor-full select#playthrough_platform');
+    if (!(select instanceof HTMLSelectElement)) {
+      return false;
+    }
+
+    select.value = next;
+    const jQuery = (
+      window as Window & {
+        jQuery?: (element: Element) => {
+          selectpicker: (method?: string, value?: string) => void;
+        };
+      }
+    ).jQuery;
+    if (!jQuery || typeof jQuery(select).selectpicker !== 'function') {
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+      return select.value === next;
+    }
+
+    const picker = jQuery(select);
+    try {
+      picker.selectpicker('refresh');
+    } catch {
+      picker.selectpicker();
+    }
+
+    try {
+      picker.selectpicker('val', next);
+    } catch {
+      select.value = next;
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+
+    return select.value === next;
+  }, value);
+}
+
+async function fillCatalogFallbackEditionAndPlatform(page: Page, title: string): Promise<void> {
+  const sourceLoaded = await waitForReleasePlatformSource(page);
+  if (!sourceLoaded) {
+    throw releasePlatformListError(title);
+  }
+
+  const editionValue = await chooseStandardEdition(page, title);
+  const platformSelect = page.locator('#log-editor-full select#playthrough_platform').first();
+  const platformAttached = await platformSelect
+    .waitFor({ state: 'attached', timeout: 15_000 })
+    .then(() => true)
+    .catch(() => false);
+  if (!platformAttached) {
+    throw releasePlatformListError(title);
+  }
+
+  if (editionValue) {
+    await triggerEditionChange(page, editionValue);
+  }
+
+  let platformOptions = await waitForPlatformOptions(
+    page,
+    platformSelect,
+    editionValue ? 1_000 : 0
+  );
+  if (platformOptions.length === 0) {
+    await copyReleasePlatformsIntoSelect(page, editionValue);
+    platformOptions = await readPlatformOptions(platformSelect);
+  }
+
+  const platformLabel = pickPreferredPlatformLabel(platformOptions.map((option) => option.label));
+  const platform = platformOptions.find((option) => option.label === platformLabel);
+  if (!platform) {
+    if (platformOptions.length === 0) {
+      throw releasePlatformListError(title);
+    }
+
+    throw new Error(
+      `No PlayStation 5, 4, or 3 platform for ${title}. Platforms: ${platformOptions
+        .map((option) => option.label)
+        .join(', ')}`
+    );
+  }
+
+  const applied = await setPlaythroughPlatformValue(page, platform.value);
+  if (!applied) {
+    throw new Error(`Could not select platform ${platform.label} for ${title}`);
+  }
 }
 
 async function openGameLogEditor(

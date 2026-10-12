@@ -14,6 +14,7 @@ import {
   parseDuration,
   pickPreferredPlatformLabel,
   pickStandardEditionLabel,
+  visibleOptionLabel,
   selectCatalogCandidate,
   toDisplayDuration,
   toLocalIsoDate,
@@ -622,5 +623,15 @@ test.describe('edition and platform labels', () => {
     ).toBe('PlayStation 5');
     expect(pickPreferredPlatformLabel(['Xbox One', 'PS4', 'PS3'])).toBe('PS4');
     expect(pickPreferredPlatformLabel(['Windows PC', 'Nintendo Switch'])).toBeNull();
+  });
+
+  test('reads option text, then data-content without html', () => {
+    expect(visibleOptionLabel('PlayStation 4', '<img src="ps5.png"> PlayStation 5')).toBe(
+      'PlayStation 4'
+    );
+    expect(visibleOptionLabel('   ', '<span class="platform"></span> PlayStation 4')).toBe(
+      'PlayStation 4'
+    );
+    expect(visibleOptionLabel('', null)).toBe('');
   });
 });
