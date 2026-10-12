@@ -27,7 +27,7 @@ Fluxo de alto nível:
 5. Abre o Backloggd e garante sessão válida.
 6. Para cada jogo agregado:
    - abre a página do jogo a partir de Playing;
-   - se o jogo não estiver em Playing, busca o título exato no catálogo (só Main Game, quando a categoria vier na busca; PlayStation 5, depois 4, depois 3), abre `/games/{slug}` e, só nesse caso, seleciona a edição Standard e a plataforma;
+   - se o jogo não estiver em Playing, busca o título exato no catálogo (só Main Game, quando a categoria vier na busca; PlayStation 5, depois 4, depois 3), abre `/games/{slug}` e, só nesse caso, seleciona a edição Standard quando ela existir e a plataforma;
    - abre o editor completo de log;
    - alinha o calendário ao mês/ano da data de referência;
    - seleciona o dia;
@@ -186,11 +186,10 @@ A lista Playing continua sendo o primeiro lugar da busca. Se o título não esti
 
 1. nenhum resultado tem o título exato (`No exact Backloggd catalog match`);
 2. dois jogos empatam na melhor plataforma, por exemplo dois Main Game de anos diferentes ambos no PS4 (`Ambiguous Backloggd catalog match`) — o sync não escolhe o primeiro;
-3. o editor tem opções de edição e nenhuma é `Standard`, `Standard Edition` ou `Edição Padrão` (`No Standard edition`);
-4. a plataforma de lançamento do jogo não inclui PlayStation 5, PlayStation 4 nem PlayStation 3 (`No PlayStation 5, 4, or 3 platform`);
-5. o editor não carregou a lista de lançamento (`Release platform list did not load`). As opções ficam em `#game-log-dropdown-options .game-platform-options` e o sync espera esse container antes de escolher PlayStation 5, 4 ou 3.
+3. a plataforma de lançamento do jogo não inclui PlayStation 5, PlayStation 4 nem PlayStation 3 (`No PlayStation 5, 4, or 3 platform`);
+4. o editor não carregou a lista de lançamento (`Release platform list did not load`). As opções ficam em `#game-log-dropdown-options .game-platform-options` e o sync espera esse container antes de escolher PlayStation 5, 4 ou 3.
 
-O erro lista os candidatos (título, ano e slug) ou as opções de edição/plataforma que apareceram. Se o jogo não tiver seletor de edição, o sync segue só com a plataforma.
+O erro lista os candidatos (título, ano e slug) ou as opções de plataforma que apareceram. Se o jogo não tiver seletor de edição, ou se nenhuma opção for `Standard`, `Standard Edition` ou `Edição Padrão`, o sync mantém a edição que o editor já trouxe e segue com a plataforma.
 
 ### 4) Login no PS-Timetracker falha
 
@@ -212,7 +211,7 @@ Se o terminal receber `Ctrl+C`, o Node encerra com código `130` (comportamento 
 - A URL de usuário do Backloggd está fixa no código (`/u/henriquetavares/playing/`).
 - A leitura do PS-Timetracker está limitada a 5 páginas por execução.
 - A busca de card em Playing varre até 500 itens.
-- Fora de Playing, o título precisa ser exato. Empate na mesma plataforma, edição sem opção Standard, jogo sem PS5/PS4/PS3, ou lista de lançamento que não carregou interrompem o sync.
+- Fora de Playing, o título precisa ser exato. Empate na mesma plataforma, jogo sem PS5/PS4/PS3, ou lista de lançamento que não carregou interrompem o sync. Sem a edição Standard, o sync mantém a edição que o editor já trouxe.
 - Variações grandes no layout/markup dos sites podem quebrar seletores.
 
 ## Estrutura do projeto
