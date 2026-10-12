@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on Keep a Changelog,
 and this project follows Semantic Versioning.
 
+## [1.2.6] - 2026-10-12
+
+### Fixed
+
+- Catalog fallback continues when `#playthrough_platform` already shows PlayStation, even if the readiness probe missed those options. The previous run had PlayStation 4 in the select and still stopped.
+
 ## [1.2.5] - 2026-10-12
 
 ### Fixed

@@ -972,8 +972,9 @@ const EDITION_ATTRIBUTE_NAMES = [
 async function frameHasReleasePlatformOptions(frame: Frame): Promise<boolean> {
   return frame
     .evaluate((selector) => {
-      const hasLabel = (option: Element) => {
-        if (!(option instanceof HTMLOptionElement) || option.value.length === 0) {
+      return [...document.querySelectorAll(selector)].some((option) => {
+        const value = option.getAttribute('value') ?? '';
+        if (value.length === 0) {
           return false;
         }
         const text = (option.textContent ?? '').replace(/\s+/g, ' ').trim();
@@ -982,8 +983,7 @@ async function frameHasReleasePlatformOptions(frame: Frame): Promise<boolean> {
           .replace(/\s+/g, ' ')
           .trim();
         return text.length > 0 || dataContent.length > 0;
-      };
-      return [...document.querySelectorAll(selector)].some(hasLabel);
+      });
     }, RELEASE_PLATFORM_OPTION_SELECTOR)
     .catch(() => false);
 }
@@ -1300,7 +1300,13 @@ async function setPlaythroughPlatformValue(page: Page, value: string): Promise<b
 async function fillCatalogFallbackEditionAndPlatform(page: Page, title: string): Promise<void> {
   const sourceLoaded = await waitForReleasePlatformSource(page);
   if (!sourceLoaded) {
-    return throwReleasePlatformListError(page, title);
+    const details = await describeReleasePlatformDom(page);
+    if (!details.includes('playthrough_platform.selectpicker=PlayStation')) {
+      console.log(`Release platform DOM for ${title}: ${details}`);
+      throw new Error(`Release platform list did not load for ${title}. ${details}`);
+    }
+
+    console.log(`Release platform select already lists PlayStation for ${title}`);
   }
 
   const editionValue = await chooseStandardEdition(page, title);
