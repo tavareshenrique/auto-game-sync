@@ -1134,11 +1134,12 @@ async function chooseStandardEdition(page: Page, title: string): Promise<string 
   const editionLabel = pickStandardEditionLabel(editionOptions.map((option) => option.label));
   const edition = editionOptions.find((option) => option.label === editionLabel);
   if (!edition) {
-    throw new Error(
-      `No Standard edition for ${title}. Editions: ${editionOptions
+    console.log(
+      `No Standard edition for ${title}; keeping the edition already selected. Editions: ${editionOptions
         .map((option) => option.label)
         .join(', ')}`
     );
+    return null;
   }
 
   return edition.value;

@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on Keep a Changelog,
 and this project follows Semantic Versioning.
 
+## [1.2.7] - 2026-10-12
+
+### Fixed
+
+- Catalog fallback keeps the edition the editor already selected when none of the options is Standard. Detroit: Become Human only lists deluxe and collector editions, so requiring Standard stopped the sync after Tales from the Borderlands had already been logged.
+
 ## [1.2.6] - 2026-10-12
 
 ### Fixed
