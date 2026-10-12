@@ -953,7 +953,8 @@ const RELEASE_PLATFORM_SOURCE_SELECTOR = [
   '.game-platform-options',
 ].join(', ');
 
-const RELEASE_PLATFORM_OPTION_SELECTOR = '.game-platform-options option';
+const RELEASE_PLATFORM_OPTION_SELECTOR =
+  '.game-platform-options option, select#playthrough_platform option';
 
 const EDITION_PLATFORM_SOURCE_SELECTOR = [
   '#game-log-dropdown-options .game-platform-options-edition',
@@ -987,18 +988,35 @@ async function frameHasReleasePlatformOptions(frame: Frame): Promise<boolean> {
     .catch(() => false);
 }
 
+function releasePlatformFrames(page: Page): Frame[] {
+  return [
+    page.mainFrame(),
+    ...page
+      .frames()
+      .filter((frame) => frame !== page.mainFrame() && frame.url().includes('backloggd.com')),
+  ];
+}
+
+async function releasePlatformOptionsReady(page: Page): Promise<boolean> {
+  for (const frame of releasePlatformFrames(page)) {
+    if (await frameHasReleasePlatformOptions(frame)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 async function waitForReleasePlatformSource(page: Page): Promise<boolean> {
-  const deadline = Date.now() + 20_000;
+  const deadline = Date.now() + 30_000;
   while (Date.now() < deadline) {
-    for (const frame of page.frames()) {
-      if (await frameHasReleasePlatformOptions(frame)) {
-        return true;
-      }
+    if (await releasePlatformOptionsReady(page)) {
+      return true;
     }
     await page.waitForTimeout(250);
   }
 
-  return false;
+  return releasePlatformOptionsReady(page);
 }
 
 async function describeReleasePlatformDom(page: Page): Promise<string> {
