@@ -14,6 +14,7 @@ import {
   parseDuration,
   pickPreferredPlatformLabel,
   pickStandardEditionLabel,
+  absoluteImageUrl,
   visibleOptionLabel,
   selectCatalogCandidate,
   toDisplayDuration,
@@ -623,6 +624,16 @@ test.describe('edition and platform labels', () => {
     ).toBe('PlayStation 5');
     expect(pickPreferredPlatformLabel(['Xbox One', 'PS4', 'PS3'])).toBe('PS4');
     expect(pickPreferredPlatformLabel(['Windows PC', 'Nintendo Switch'])).toBeNull();
+  });
+
+  test('turns a protocol-relative cover into an https url', () => {
+    expect(absoluteImageUrl('//images.igdb.com/igdb/image/upload/t_cover_big/co20tr.jpg')).toBe(
+      'https://images.igdb.com/igdb/image/upload/t_cover_big/co20tr.jpg'
+    );
+    expect(
+      absoluteImageUrl('https://images.igdb.com/igdb/image/upload/t_cover_big/co20tr.jpg')
+    ).toBe('https://images.igdb.com/igdb/image/upload/t_cover_big/co20tr.jpg');
+    expect(absoluteImageUrl('data:image/gif;base64,R0lGODlh')).toBeUndefined();
   });
 
   test('reads option text, then data-content without html', () => {

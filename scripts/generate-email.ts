@@ -2,6 +2,7 @@ import { appendFileSync } from 'node:fs';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import * as path from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { absoluteImageUrl } from '../src/domain.js';
 
 const SYNC_SUMMARY_PATH = process.env.SYNC_SUMMARY_PATH ?? 'storage/sync-summary.json';
 const OUTPUT_PATH = process.env.EMAIL_OUTPUT_PATH ?? 'storage/email-body.html';
@@ -54,8 +55,9 @@ function placeholderGradient(title: string): string {
 }
 
 function gameCoverHtml(game: SyncSummaryGame): string {
-  if (game.coverUrl) {
-    const escapedSrc = escapeHtml(game.coverUrl);
+  const coverUrl = absoluteImageUrl(game.coverUrl);
+  if (coverUrl) {
+    const escapedSrc = escapeHtml(coverUrl);
     const escapedAlt = escapeHtml(game.title);
     return `<img src="${escapedSrc}" width="60" height="90" style="display: block; border-radius: 8px; object-fit: cover; border: 1px solid #e2e8f0; width: 60px; height: 90px;" alt="${escapedAlt}" />`;
   }
