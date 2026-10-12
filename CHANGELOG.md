@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on Keep a Changelog,
 and this project follows Semantic Versioning.
 
+## [1.2.2] - 2026-10-12
+
+### Fixed
+
+- Catalog fallback waits for the hidden release platform list (`.game-platform-options`) and copies it into the platform select before choosing PlayStation 5, then 4, then 3. Waiting on the select itself ended with an empty list when Backloggd filled the source later.
+
 ## [1.2.1] - 2026-10-06
 
 ### Fixed
