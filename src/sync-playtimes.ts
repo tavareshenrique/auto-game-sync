@@ -943,15 +943,17 @@ type EditionSelectElement = HTMLSelectElement & {
   };
 };
 
+const PLAYTHROUGH_PLATFORM_SELECTOR =
+  '#log-editor-full select#playthrough_platform, select#playthrough_platform';
+
 const RELEASE_PLATFORM_SOURCE_SELECTOR = [
   '#game-log-dropdown-options div.game-platform-options',
-  '#log-editor-full div.game-platform-options',
+  'div.game-platform-options',
+  'select.game-platform-options',
+  '.game-platform-options',
 ].join(', ');
 
-const RELEASE_PLATFORM_OPTION_SELECTOR = [
-  '#game-log-dropdown-options div.game-platform-options option',
-  '#log-editor-full div.game-platform-options option',
-].join(', ');
+const RELEASE_PLATFORM_OPTION_SELECTOR = '.game-platform-options option';
 
 const EDITION_PLATFORM_SOURCE_SELECTOR = [
   '#game-log-dropdown-options .game-platform-options-edition',
@@ -966,8 +968,87 @@ const EDITION_ATTRIBUTE_NAMES = [
   'data-game-edition-id',
 ] as const;
 
-function releasePlatformListError(title: string): Error {
-  return new Error(`Release platform list did not load for ${title}`);
+async function frameHasReleasePlatformOptions(frame: Frame): Promise<boolean> {
+  return frame
+    .evaluate((selector) => {
+      const hasLabel = (option: Element) => {
+        if (!(option instanceof HTMLOptionElement) || option.value.length === 0) {
+          return false;
+        }
+        const text = (option.textContent ?? '').replace(/\s+/g, ' ').trim();
+        const dataContent = (option.getAttribute('data-content') ?? '')
+          .replace(/<[^>]*>/g, ' ')
+          .replace(/\s+/g, ' ')
+          .trim();
+        return text.length > 0 || dataContent.length > 0;
+      };
+      return [...document.querySelectorAll(selector)].some(hasLabel);
+    }, RELEASE_PLATFORM_OPTION_SELECTOR)
+    .catch(() => false);
+}
+
+async function waitForReleasePlatformSource(page: Page): Promise<boolean> {
+  const deadline = Date.now() + 20_000;
+  while (Date.now() < deadline) {
+    for (const frame of page.frames()) {
+      if (await frameHasReleasePlatformOptions(frame)) {
+        return true;
+      }
+    }
+    await page.waitForTimeout(250);
+  }
+
+  return false;
+}
+
+async function describeReleasePlatformDom(page: Page): Promise<string> {
+  const chunks: string[] = [];
+  for (const frame of page.frames()) {
+    const summary = await frame
+      .evaluate(() => {
+        const container = document.querySelector('#game-log-dropdown-options');
+        const sources = [...document.querySelectorAll('.game-platform-options')].slice(0, 4);
+        const select = document.querySelector('select#playthrough_platform');
+        const playstation = [...document.querySelectorAll('option')]
+          .filter((option) =>
+            /playstation|\bps[345]\b/i.test(
+              `${option.textContent ?? ''} ${option.getAttribute('data-content') ?? ''}`
+            )
+          )
+          .slice(0, 4)
+          .map((option) => {
+            const parent = option.parentElement;
+            return `${parent?.tagName ?? '?'}#${parent?.id ?? ''}.${String(parent?.className ?? '').slice(0, 40)}=${(option.textContent ?? '').replace(/\s+/g, ' ').trim().slice(0, 40)}`;
+          });
+        return [
+          `container=${
+            container
+              ? `${container.tagName}#${container.id} children=${container.childElementCount} html=${container.innerHTML.replace(/\s+/g, ' ').slice(0, 160)}`
+              : 'missing'
+          }`,
+          `sources=${
+            sources
+              .map(
+                (element) =>
+                  `${element.tagName}.${String(element.className).slice(0, 40)} opts=${element.querySelectorAll('option').length}`
+              )
+              .join(',') || 'none'
+          }`,
+          `selectOpts=${select instanceof HTMLSelectElement ? select.options.length : 'missing'}`,
+          `ps=${playstation.join(' / ') || 'none'}`,
+        ].join(' ; ');
+      })
+      .catch((error: unknown) => (error instanceof Error ? error.message : 'frame unavailable'));
+    chunks.push(summary);
+  }
+
+  return chunks.join(' || ').slice(0, 1500);
+}
+
+async function throwReleasePlatformListError(page: Page, title: string): Promise<never> {
+  const details = await describeReleasePlatformDom(page);
+  console.log(`Release platform DOM for ${title}: ${details}`);
+  throw new Error(`Release platform list did not load for ${title}. ${details}`);
 }
 
 async function readPlatformOptions(select: Locator): Promise<PlatformOption[]> {
@@ -985,29 +1066,6 @@ async function readPlatformOptions(select: Locator): Promise<PlatformOption[]> {
       label: visibleOptionLabel(option.text, option.dataContent),
     }))
     .filter((option) => option.value.length > 0 && option.label.length > 0);
-}
-
-async function waitForReleasePlatformSource(page: Page): Promise<boolean> {
-  return page
-    .waitForFunction(
-      (selector) =>
-        [...document.querySelectorAll(selector)].some((node) => {
-          if (!(node instanceof HTMLOptionElement) || node.value.length === 0) {
-            return false;
-          }
-
-          const text = (node.textContent ?? '').replace(/\s+/g, ' ').trim();
-          const dataContent = (node.getAttribute('data-content') ?? '')
-            .replace(/<[^>]*>/g, ' ')
-            .replace(/\s+/g, ' ')
-            .trim();
-          return text.length > 0 || dataContent.length > 0;
-        }),
-      RELEASE_PLATFORM_OPTION_SELECTOR,
-      { timeout: 15_000 }
-    )
-    .then(() => true)
-    .catch(() => false);
 }
 
 async function waitForPlatformOptions(
@@ -1118,11 +1176,16 @@ async function copyReleasePlatformsIntoSelect(
       }
 
       const bases = [...document.querySelectorAll(baseSelector)];
+      const withOptions = bases.filter(
+        (element) =>
+          element instanceof HTMLOptionElement ||
+          [...element.querySelectorAll('option')].some((option) => option.value.length > 0)
+      );
       const base =
-        bases.find(
-          (element) => element instanceof HTMLOptionElement || element.querySelector('option')
-        ) ?? null;
-      const select = document.querySelector('#log-editor-full select#playthrough_platform');
+        withOptions.find((element) => element.closest('#game-log-dropdown-options')) ??
+        withOptions[0] ??
+        null;
+      const select = document.querySelector('select#playthrough_platform');
       if (!(select instanceof HTMLSelectElement) || !base) {
         return;
       }
@@ -1180,7 +1243,7 @@ async function copyReleasePlatformsIntoSelect(
 
 async function setPlaythroughPlatformValue(page: Page, value: string): Promise<boolean> {
   return page.evaluate((next) => {
-    const select = document.querySelector('#log-editor-full select#playthrough_platform');
+    const select = document.querySelector('select#playthrough_platform');
     if (!(select instanceof HTMLSelectElement)) {
       return false;
     }
@@ -1219,17 +1282,17 @@ async function setPlaythroughPlatformValue(page: Page, value: string): Promise<b
 async function fillCatalogFallbackEditionAndPlatform(page: Page, title: string): Promise<void> {
   const sourceLoaded = await waitForReleasePlatformSource(page);
   if (!sourceLoaded) {
-    throw releasePlatformListError(title);
+    return throwReleasePlatformListError(page, title);
   }
 
   const editionValue = await chooseStandardEdition(page, title);
-  const platformSelect = page.locator('#log-editor-full select#playthrough_platform').first();
+  const platformSelect = page.locator(PLAYTHROUGH_PLATFORM_SELECTOR).first();
   const platformAttached = await platformSelect
     .waitFor({ state: 'attached', timeout: 15_000 })
     .then(() => true)
     .catch(() => false);
   if (!platformAttached) {
-    throw releasePlatformListError(title);
+    return throwReleasePlatformListError(page, title);
   }
 
   if (editionValue) {
@@ -1250,7 +1313,7 @@ async function fillCatalogFallbackEditionAndPlatform(page: Page, title: string):
   const platform = platformOptions.find((option) => option.label === platformLabel);
   if (!platform) {
     if (platformOptions.length === 0) {
-      throw releasePlatformListError(title);
+      return throwReleasePlatformListError(page, title);
     }
 
     throw new Error(

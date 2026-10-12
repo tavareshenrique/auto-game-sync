@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on Keep a Changelog,
 and this project follows Semantic Versioning.
 
+## [1.2.4] - 2026-10-12
+
+### Fixed
+
+- Catalog fallback looks for `.game-platform-options` anywhere in the page, including frames outside `#log-editor-full`. The previous selector never saw the release list, so the sync stopped before choosing PlayStation 4.
+
 ## [1.2.3] - 2026-10-12
 
 ### Fixed
