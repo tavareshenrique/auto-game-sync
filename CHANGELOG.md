@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on Keep a Changelog,
 and this project follows Semantic Versioning.
 
+## [1.2.8] - 2026-10-12
+
+### Fixed
+
+- Success email uses the game cover from `og:image` instead of the hero inside `#game-cover-art`. That hero is a protocol-relative WebP (`//images.igdb.com/...`), which mail clients cannot load, so the message showed the title as alt text.
+
 ## [1.2.7] - 2026-10-12
 
 ### Fixed
