@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on Keep a Changelog,
 and this project follows Semantic Versioning.
 
+## [1.2.5] - 2026-10-12
+
+### Fixed
+
+- Catalog fallback treats `#playthrough_platform` as ready when it already lists a platform. The hidden source could finish loading in the same moment the previous wait gave up, leaving PlayStation 4 in the select unused.
+
 ## [1.2.4] - 2026-10-12
 
 ### Fixed
