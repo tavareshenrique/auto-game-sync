@@ -316,6 +316,20 @@ function pickPreferredPlatformLabel(options: readonly string[]): string | null {
   return null;
 }
 
+function absoluteImageUrl(value: string | null | undefined): string | undefined {
+  const raw = value?.trim() ?? '';
+  if (!raw || raw.startsWith('data:')) {
+    return undefined;
+  }
+  if (raw.startsWith('//')) {
+    return `https:${raw}`;
+  }
+  if (raw.startsWith('https://') || raw.startsWith('http://')) {
+    return raw;
+  }
+  return undefined;
+}
+
 function visibleOptionLabel(textContent: string, dataContent?: string | null): string {
   const text = collapseSpaces(textContent);
   if (text.length > 0) {
@@ -350,6 +364,7 @@ function aggregateSessions(sessions: RawSession[]): GamePlaytime[] {
 
 export type { CatalogCandidate, CatalogSelection, GamePlaytime, RawSession };
 export {
+  absoluteImageUrl,
   aggregateSessions,
   collapseSpaces,
   describeCatalogCandidates,

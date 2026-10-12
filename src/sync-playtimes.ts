@@ -2,6 +2,7 @@ import 'dotenv/config';
 import { mkdir, access, writeFile } from 'node:fs/promises';
 import { chromium, type Page, type Frame, type BrowserContext, type Locator } from 'playwright';
 import {
+  absoluteImageUrl,
   collapseSpaces,
   describeCatalogCandidates,
   durationToMinutes,
@@ -914,21 +915,22 @@ async function resolveCatalogGame(page: Page, title: string): Promise<CatalogCan
 }
 
 async function readGamePageCover(page: Page): Promise<string | undefined> {
-  const cover = await page
-    .locator('#game-cover-art img')
-    .first()
-    .getAttribute('src')
-    .catch(() => null);
-  if (cover) {
-    return cover;
-  }
-
   const ogImage = await page
     .locator('meta[property="og:image"]')
     .first()
     .getAttribute('content')
     .catch(() => null);
-  return ogImage || undefined;
+  const fromOg = absoluteImageUrl(ogImage);
+  if (fromOg) {
+    return fromOg;
+  }
+
+  const cardCover = await page
+    .locator('.card.game-cover img.card-img')
+    .first()
+    .getAttribute('src')
+    .catch(() => null);
+  return absoluteImageUrl(cardCover);
 }
 
 type PlatformOption = {
@@ -1371,7 +1373,7 @@ async function openGameLogEditor(
   let gameUrl = page.url();
 
   if (found) {
-    coverUrl = found.coverUrl;
+    coverUrl = absoluteImageUrl(found.coverUrl);
     const coverLink = found.card.locator('a.cover-link').first();
     const rawGameHref = (await coverLink.getAttribute('href').catch(() => null)) ?? '';
     await coverLink.click({ force: true });
@@ -1403,7 +1405,7 @@ async function openGameLogEditor(
 
     const game = await resolveCatalogGame(page, title);
     usedCatalogFallback = true;
-    coverUrl = game.coverUrl;
+    coverUrl = absoluteImageUrl(game.coverUrl);
     await page.goto(backloggdUrl(`/games/${game.slug}/`), { waitUntil: 'domcontentloaded' });
     await page.waitForLoadState('networkidle').catch(() => undefined);
     await waitForBackloggdReady(page).catch(() => undefined);
