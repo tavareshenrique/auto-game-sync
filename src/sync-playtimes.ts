@@ -943,13 +943,23 @@ type EditionSelectElement = HTMLSelectElement & {
   };
 };
 
-const RELEASE_PLATFORM_SOURCE_SELECTOR =
-  '#log-editor-full .game-platform-options, #game-log-dropdown-options .game-platform-options';
+const RELEASE_PLATFORM_SOURCE_SELECTOR = [
+  '#game-log-dropdown-options div.game-platform-options',
+  '#log-editor-full div.game-platform-options',
+].join(', ');
 
-const EDITION_PLATFORM_SOURCE_SELECTOR =
-  '#log-editor-full .game-platform-options-edition, #game-log-dropdown-options .game-platform-options-edition';
+const RELEASE_PLATFORM_OPTION_SELECTOR = [
+  '#game-log-dropdown-options div.game-platform-options option',
+  '#log-editor-full div.game-platform-options option',
+].join(', ');
+
+const EDITION_PLATFORM_SOURCE_SELECTOR = [
+  '#game-log-dropdown-options .game-platform-options-edition',
+  '#log-editor-full .game-platform-options-edition',
+].join(', ');
 
 const EDITION_ATTRIBUTE_NAMES = [
+  'edition_id',
   'data-edition-id',
   'data-edition',
   'data-id',
@@ -979,9 +989,23 @@ async function readPlatformOptions(select: Locator): Promise<PlatformOption[]> {
 
 async function waitForReleasePlatformSource(page: Page): Promise<boolean> {
   return page
-    .locator(`${RELEASE_PLATFORM_SOURCE_SELECTOR} option`)
-    .first()
-    .waitFor({ state: 'attached', timeout: 15_000 })
+    .waitForFunction(
+      (selector) =>
+        [...document.querySelectorAll(selector)].some((node) => {
+          if (!(node instanceof HTMLOptionElement) || node.value.length === 0) {
+            return false;
+          }
+
+          const text = (node.textContent ?? '').replace(/\s+/g, ' ').trim();
+          const dataContent = (node.getAttribute('data-content') ?? '')
+            .replace(/<[^>]*>/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+          return text.length > 0 || dataContent.length > 0;
+        }),
+      RELEASE_PLATFORM_OPTION_SELECTOR,
+      { timeout: 15_000 }
+    )
     .then(() => true)
     .catch(() => false);
 }

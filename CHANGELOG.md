@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on Keep a Changelog,
 and this project follows Semantic Versioning.
 
+## [1.2.3] - 2026-10-12
+
+### Fixed
+
+- Catalog fallback waits for a real option inside `#game-log-dropdown-options div.game-platform-options` before copying release platforms. The previous selector also matched the empty container, so the select was filled before PlayStation options arrived.
+
 ## [1.2.2] - 2026-10-12
 
 ### Fixed
