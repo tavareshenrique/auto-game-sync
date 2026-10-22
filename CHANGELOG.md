@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on Keep a Changelog,
 and this project follows Semantic Versioning.
 
+## [1.2.10] - 2026-10-22
+
+### Changed
+
+- GitHub Actions that still declared Node 20 now use releases that run on Node 24: `actions/checkout` v7, `actions/setup-node` v7, `pnpm/action-setup` v6, and `dawidd6/action-send-mail` v23. The runners already force Node 24 and warn on the old majors. The email action was included because v3 also targets Node 20; the step is skipped when there is nothing to send, so that warning only shows up on a sync that actually mails.
+
 ## [1.2.9] - 2026-10-22
 
 ### Fixed
