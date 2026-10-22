@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on Keep a Changelog,
 and this project follows Semantic Versioning.
 
+## [1.2.9] - 2026-10-22
+
+### Fixed
+
+- Playwright and `@playwright/test` are 1.64.1, which ships the Ubuntu 26.04 Chromium build. `ubuntu-latest` is moving to 26.04, and 1.60.0 failed in `pnpm install` because `playwright install chromium` had no `ubuntu26.04-x64` build. Sync Playtimes died before the sync.
+
 ## [1.2.8] - 2026-10-12
 
 ### Fixed
