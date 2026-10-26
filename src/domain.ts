@@ -49,6 +49,15 @@ function normalizeText(value: string): string {
     .trim();
 }
 
+function catalogSearchQueries(title: string): string[] {
+  const folded = title.normalize('NFD').replace(/\p{Diacritic}/gu, '');
+  if (folded === title) {
+    return [title];
+  }
+
+  return [title, folded];
+}
+
 function collapseSpaces(value: string): string {
   return value.replace(/\s+/g, ' ').trim();
 }
@@ -366,6 +375,7 @@ export type { CatalogCandidate, CatalogSelection, GamePlaytime, RawSession };
 export {
   absoluteImageUrl,
   aggregateSessions,
+  catalogSearchQueries,
   collapseSpaces,
   describeCatalogCandidates,
   durationToMinutes,

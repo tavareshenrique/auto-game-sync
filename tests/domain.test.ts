@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 import {
   aggregateSessions,
+  catalogSearchQueries,
   collapseSpaces,
   describeCatalogCandidates,
   durationToMinutes,
@@ -383,6 +384,18 @@ test.describe('getReferenceDate', () => {
   });
 });
 
+// --- catalogSearchQueries ---
+
+test.describe('catalogSearchQueries', () => {
+  test('repeats a title without diacritics when the spelling changes', () => {
+    expect(catalogSearchQueries('Ghost of Yōtei')).toEqual(['Ghost of Yōtei', 'Ghost of Yotei']);
+  });
+
+  test('keeps an ASCII title as a single query', () => {
+    expect(catalogSearchQueries('Ghost of Yotei')).toEqual(['Ghost of Yotei']);
+  });
+});
+
 // --- selectCatalogCandidate ---
 
 test.describe('selectCatalogCandidate', () => {
@@ -405,6 +418,17 @@ test.describe('selectCatalogCandidate', () => {
     ]);
 
     expect(selection.status).toBe('selected');
+  });
+
+  test('selects a catalog title that drops diacritics from the PlayStation name', () => {
+    const selection = selectCatalogCandidate('Ghost of Yōtei', [
+      { title: 'Ghost of Yotei', slug: 'ghost-of-yotei', year: 2025 },
+    ]);
+
+    expect(selection).toEqual({
+      status: 'selected',
+      candidate: { title: 'Ghost of Yotei', slug: 'ghost-of-yotei', year: 2025 },
+    });
   });
 
   test('keeps only Main Game when the search reports a category', () => {
