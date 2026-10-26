@@ -3,6 +3,7 @@ import { mkdir, access, writeFile } from 'node:fs/promises';
 import { chromium, type Page, type Frame, type BrowserContext, type Locator } from 'playwright';
 import {
   absoluteImageUrl,
+  catalogSearchQueries,
   collapseSpaces,
   describeCatalogCandidates,
   durationToMinutes,
@@ -895,23 +896,38 @@ async function readSearchHits(page: Page, title: string): Promise<CatalogCandida
 }
 
 async function resolveCatalogGame(page: Page, title: string): Promise<CatalogCandidate> {
-  const autocompleteHits = await readAutocompleteHits(page, title);
-  const exactCount = autocompleteHits.filter(
-    (hit) => normalizeText(hit.title) === normalizeText(title)
-  ).length;
-  const searchHits = exactCount > 1 ? await readSearchHits(page, title) : [];
-  const pool = searchHits.length > 0 ? searchHits : autocompleteHits;
-  const selection = selectCatalogCandidate(title, pool);
+  const queries = catalogSearchQueries(title);
+  let failure: { status: 'none' | 'tie'; candidates: CatalogCandidate[] } | undefined;
 
-  if (selection.status === 'selected') {
-    return selection.candidate;
+  for (const [index, query] of queries.entries()) {
+    if (index > 0) {
+      console.log(`Catalog miss for "${queries[index - 1]}", retrying as "${query}"`);
+    }
+
+    const autocompleteHits = await readAutocompleteHits(page, query);
+    const expectedTitle = normalizeText(title);
+    const exactCount = autocompleteHits.filter(
+      (hit) => normalizeText(hit.title) === expectedTitle
+    ).length;
+    const searchHits = exactCount === 1 ? [] : await readSearchHits(page, query);
+    const pool = searchHits.length > 0 ? searchHits : autocompleteHits;
+    const selection = selectCatalogCandidate(title, pool);
+
+    if (selection.status === 'selected') {
+      return selection.candidate;
+    }
+
+    failure = selection;
+    if (selection.status === 'tie') {
+      break;
+    }
   }
 
   const reason =
-    selection.status === 'tie'
+    failure?.status === 'tie'
       ? `Ambiguous Backloggd catalog match for ${title}`
       : `No exact Backloggd catalog match for ${title}`;
-  throw new Error(`${reason}. Candidates: ${describeCatalogCandidates(selection.candidates)}`);
+  throw new Error(`${reason}. Candidates: ${describeCatalogCandidates(failure?.candidates ?? [])}`);
 }
 
 async function readGamePageCover(page: Page): Promise<string | undefined> {

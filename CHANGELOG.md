@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on Keep a Changelog,
 and this project follows Semantic Versioning.
 
+## [1.2.11] - 2026-10-26
+
+### Fixed
+
+- Catalog lookup retries without diacritics when Backloggd returns no exact hit for an accented title. Autocomplete for `Ghost of Yōtei` came back empty, and the full search never ran, so the sync stopped with `Candidates: none` even though `Ghost of Yotei` is the same normalized name. A query with no exact autocomplete hit now searches that spelling, and a still-empty result is tried again without diacritics. A tie still stops.
+
 ## [1.2.10] - 2026-10-22
 
 ### Changed
